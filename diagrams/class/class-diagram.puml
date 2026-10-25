@@ -1,0 +1,555 @@
+@startuml class-diagram
+title Smart Parking Management System: class diagram
+
+' One diagram for the whole system (exercise 3). Sections below follow the PoC packages
+' (com.smartparking.poc.<package>); package boxes are left out because Graphviz overlaps them
+' when notes link across packages. Each design pattern is marked by a note linked to every
+' class that takes part in it; names match docs/design-patterns.md.
+
+hide empty members
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam nodesep 40
+skinparam ranksep 60
+skinparam note {
+  BackgroundColor #FFF8D6
+  BorderColor #9A8A3A
+}
+
+' ───────────────────────────── user ─────────────────────────────
+' package user
+abstract class User {
+  - id: UUID
+  - name: String
+  - email: String
+}
+class Driver {
+  - phone: String
+  - preferredChannel: ChannelType
+  - preferredPaymentMethod: PaymentMethod
+}
+class Admin
+interface DriverRepository <<Repository>> {
+  + findById(id: UUID): Optional<Driver>
+}
+
+' ───────────────────────────── location ─────────────────────────────
+' package location
+class ParkingLocation {
+  - id: UUID
+  - name: String
+  - address: String
+  - latitude: double
+  - longitude: double
+  - pricingRule: PricingRule
+  + getPricingStrategy(): PricingStrategy
+  + addSpot(spot: ParkingSpot): void
+  + countAvailable(): int
+}
+class ParkingLocationService {
+  + createLocation(name: String, address: String, latitude: double, longitude: double): ParkingLocation
+  + addSpots(locationId: UUID, level: int, zone: String, count: int, type: SpotType): List<ParkingSpot>
+  + updatePricingRule(locationId: UUID, rule: PricingRule): void
+  + setOutOfService(spotId: UUID, outOfService: boolean): ParkingSpot
+  + getAvailability(locationId: UUID): Map<SpotStatus, Long>
+}
+class ParkingLocationController
+
+' ───────────────────────────── pricing (Strategy) ─────────────────────────────
+' package pricing
+class PricingRule {
+  - strategyType: PricingStrategyType
+  - hourlyRate: BigDecimal
+  - flatRate: BigDecimal
+  - firstHourRate: BigDecimal
+  - laterHourRate: BigDecimal
+  - dayRate: BigDecimal
+  - nightWeekendRate: BigDecimal
+  + toStrategy(): PricingStrategy
+}
+enum PricingStrategyType {
+  HOURLY
+  FLAT_RATE
+  TIERED
+  NIGHT_WEEKEND
+}
+interface PricingStrategy {
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+class HourlyPricingStrategy {
+  - hourlyRate: BigDecimal
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+class FlatRatePricingStrategy {
+  - flatRate: BigDecimal
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+class TieredPricingStrategy {
+  - firstHourRate: BigDecimal
+  - laterHourRate: BigDecimal
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+class NightWeekendPricingStrategy {
+  - dayRate: BigDecimal
+  - nightWeekendRate: BigDecimal
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+
+' ───────────────────────────── spot (State) ─────────────────────────────
+' package spot
+class ParkingSpot {
+  - id: UUID
+  - code: String
+  - level: int
+  - zone: String
+  - type: SpotType
+  - evCharging: boolean
+  - accessible: boolean
+  - status: SpotStatus
+  - state: SpotState
+  - version: long
+  + reserve(): void
+  + occupy(): void
+  + release(): void
+  + markOutOfService(): void
+  + returnToService(): void
+  ~ changeState(newState: SpotState): void
+  + getLocation(): ParkingLocation
+}
+enum SpotType {
+  STANDARD
+  COMPACT
+  LARGE
+  MOTORCYCLE
+}
+enum SpotStatus {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+  OUT_OF_SERVICE
+}
+interface SpotState {
+  + reserve(spot: ParkingSpot): void
+  + occupy(spot: ParkingSpot): void
+  + release(spot: ParkingSpot): void
+  + markOutOfService(spot: ParkingSpot): void
+  + returnToService(spot: ParkingSpot): void
+  + getStatus(): SpotStatus
+}
+class AvailableState {
+  + reserve(spot: ParkingSpot): void
+  + occupy(spot: ParkingSpot): void
+  + markOutOfService(spot: ParkingSpot): void
+}
+class ReservedState {
+  + occupy(spot: ParkingSpot): void
+  + release(spot: ParkingSpot): void
+}
+class OccupiedState {
+  + release(spot: ParkingSpot): void
+}
+class OutOfServiceState {
+  + returnToService(spot: ParkingSpot): void
+}
+class IllegalSpotStateTransitionException
+interface ParkingSpotRepository <<Repository>> {
+  + findById(id: UUID): Optional<ParkingSpot>
+  + save(spot: ParkingSpot): ParkingSpot
+}
+
+' ───────────────────────────── reservation ─────────────────────────────
+' package reservation
+class Reservation {
+  - id: UUID
+  - status: ReservationStatus
+  - createdAt: Instant
+  - expiresAt: Instant
+  + cancel(): void
+  + expire(): void
+  + complete(): void
+  + isExpired(now: Instant): boolean
+}
+enum ReservationStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  COMPLETED
+}
+class ReservationService {
+  - reservationDuration: Duration
+  + reserve(driverId: UUID, spotId: UUID): Reservation
+  + cancel(reservationId: UUID): void
+  + expireOverdue(now: Instant): int
+}
+class ReservationExpirationScheduler {
+  + expireReservations(): void
+}
+class ReservationController
+class GlobalExceptionHandler <<RestControllerAdvice>> {
+  + handleConflict(ex: RuntimeException): ProblemDetail
+}
+interface ReservationRepository <<Repository>> {
+  + save(reservation: Reservation): Reservation
+  + findByDriverIdAndSpotIdAndStatus(driverId: UUID, spotId: UUID, status: ReservationStatus): Optional<Reservation>
+  + findByStatusAndExpiresAtBefore(status: ReservationStatus, time: Instant): List<Reservation>
+}
+
+' ───────────────────────────── session (Facade) ─────────────────────────────
+' package session
+class ParkingSession {
+  - id: UUID
+  - entryTime: Instant
+  - exitTime: Instant
+  - cost: BigDecimal
+  - status: SessionStatus
+  + end(exitTime: Instant, cost: BigDecimal): void
+  + getDuration(): Duration
+}
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+}
+class ParkingSessionFacade {
+  + startSession(driverId: UUID, spotId: UUID): ParkingSession
+  + endSession(sessionId: UUID): ParkingSession
+}
+class ParkingSessionController
+interface ParkingSessionRepository <<Repository>> {
+  + findById(id: UUID): Optional<ParkingSession>
+  + save(session: ParkingSession): ParkingSession
+}
+
+' ───────────────────────────── payment (Factory) ─────────────────────────────
+' package payment
+class Payment {
+  - id: UUID
+  - amount: BigDecimal
+  - method: PaymentMethod
+  - status: PaymentStatus
+  - processedAt: Instant
+  + markCompleted(): void
+  + markFailed(): void
+}
+enum PaymentMethod {
+  CARD
+  WALLET
+}
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+class PaymentProcessorFactory {
+  - processors: Map<PaymentMethod, PaymentProcessor>
+  + create(method: PaymentMethod): PaymentProcessor
+}
+interface PaymentProcessor {
+  + process(payment: Payment): PaymentResult
+}
+class CardPaymentProcessor {
+  - failureRate: double
+  + process(payment: Payment): PaymentResult
+}
+class WalletPaymentProcessor {
+  - failureRate: double
+  + process(payment: Payment): PaymentResult
+}
+class PaymentResult <<record>> {
+  + success: boolean
+  + message: String
+}
+interface PaymentRepository <<Repository>> {
+  + save(payment: Payment): Payment
+}
+
+' ───────────────────────────── event (Observer) ─────────────────────────────
+' package event
+abstract class DomainEvent {
+  - eventId: UUID
+  - occurredAt: Instant
+}
+class ReservationCreatedEvent {
+  - reservationId: UUID
+  - driverId: UUID
+  - spotId: UUID
+}
+class ReservationCancelledEvent {
+  - reservationId: UUID
+  - driverId: UUID
+  - spotId: UUID
+}
+class ReservationExpiredEvent {
+  - reservationId: UUID
+  - driverId: UUID
+  - spotId: UUID
+}
+class SessionCompletedEvent {
+  - sessionId: UUID
+  - driverId: UUID
+  - cost: BigDecimal
+}
+class PaymentCompletedEvent {
+  - paymentId: UUID
+  - sessionId: UUID
+  - driverId: UUID
+}
+class PaymentFailedEvent {
+  - paymentId: UUID
+  - sessionId: UUID
+  - driverId: UUID
+}
+
+' package "org.springframework.context" as spring
+interface ApplicationEventPublisher {
+  + publishEvent(event: Object): void
+}
+
+' ───────────────────────────── notification (Observer + Factory) ─────────────────────────────
+' package notification
+interface NotificationRepository <<Repository>> {
+  + save(notification: Notification): Notification
+}
+class Notification {
+  - id: UUID
+  - channelType: ChannelType
+  - message: String
+  - sentAt: Instant
+}
+enum ChannelType {
+  EMAIL
+  SMS
+  PUSH
+}
+class NotificationEventListener {
+  + onReservationCreated(event: ReservationCreatedEvent): void
+  + onReservationCancelled(event: ReservationCancelledEvent): void
+  + onReservationExpired(event: ReservationExpiredEvent): void
+  + onSessionCompleted(event: SessionCompletedEvent): void
+  + onPaymentCompleted(event: PaymentCompletedEvent): void
+  + onPaymentFailed(event: PaymentFailedEvent): void
+}
+class NotificationChannelFactory {
+  + create(type: ChannelType): NotificationChannel
+}
+interface NotificationChannel {
+  + send(notification: Notification): void
+}
+class EmailNotificationChannel {
+  + send(notification: Notification): void
+}
+class SmsNotificationChannel {
+  + send(notification: Notification): void
+}
+class PushNotificationChannel {
+  + send(notification: Notification): void
+}
+
+' ═════════════════════════════ relationships ═════════════════════════════
+
+' Users
+User <|-- Driver
+User <|-- Admin
+Admin "1" --> "0..*" ParkingLocation : manages
+
+DriverRepository ..> Driver : stores
+
+' Locations, spots and pricing
+ParkingLocation "1" *-- "0..*" ParkingSpot : contains
+ParkingLocation "1" *-- "1" PricingRule : priced by
+ParkingLocationController --> ParkingLocationService
+ParkingLocationService --> ParkingSpotRepository
+
+' Strategy
+PricingStrategy <|.. HourlyPricingStrategy
+PricingStrategy <|.. FlatRatePricingStrategy
+PricingStrategy <|.. TieredPricingStrategy
+PricingStrategy <|.. NightWeekendPricingStrategy
+PricingRule ..> PricingStrategy : <<creates>>
+ParkingLocation ..> PricingStrategy : uses
+
+' State
+ParkingSpot "1" --> "1" SpotState : state
+SpotState <|.. AvailableState
+SpotState <|.. ReservedState
+SpotState <|.. OccupiedState
+SpotState <|.. OutOfServiceState
+SpotState ..> IllegalSpotStateTransitionException : <<throws>>
+
+' Reservations
+Reservation "0..*" --> "1" Driver : made by
+Reservation "0..*" --> "1" ParkingSpot : holds
+ReservationController --> ReservationService
+ReservationExpirationScheduler --> ReservationService
+ReservationService --> ReservationRepository
+ReservationService --> ParkingSpotRepository
+ReservationService --> ApplicationEventPublisher
+GlobalExceptionHandler ..> IllegalSpotStateTransitionException : 409 Conflict
+
+' Sessions (Facade)
+ParkingSession "0..*" --> "1" Driver : parked by
+ParkingSession "0..*" --> "1" ParkingSpot : occupies
+ParkingSession "0..1" --> "0..1" Reservation : fulfils
+ParkingSessionController --> ParkingSessionFacade
+ParkingSessionFacade --> ParkingSessionRepository
+ParkingSessionFacade --> ParkingSpotRepository
+ParkingSessionFacade --> ReservationRepository
+ParkingSessionFacade --> PaymentRepository
+ParkingSessionFacade --> PaymentProcessorFactory
+ParkingSessionFacade --> ApplicationEventPublisher
+ParkingSessionFacade ..> PricingStrategy : calculates cost with
+
+' Repositories (Spring Data JPA) store the entities
+ParkingSpotRepository ..> ParkingSpot : stores
+ReservationRepository ..> Reservation : stores
+ParkingSessionRepository ..> ParkingSession : stores
+PaymentRepository ..> Payment : stores
+
+' Payments (Factory)
+Payment "0..*" --> "1" ParkingSession : pays for
+PaymentProcessorFactory "1" o-- "1..*" PaymentProcessor : creates
+PaymentProcessor <|.. CardPaymentProcessor
+PaymentProcessor <|.. WalletPaymentProcessor
+PaymentProcessor ..> PaymentResult : returns
+
+' Events (Observer)
+DomainEvent <|-- ReservationCreatedEvent
+DomainEvent <|-- ReservationCancelledEvent
+DomainEvent <|-- ReservationExpiredEvent
+DomainEvent <|-- SessionCompletedEvent
+DomainEvent <|-- PaymentCompletedEvent
+DomainEvent <|-- PaymentFailedEvent
+ApplicationEventPublisher ..> DomainEvent : publishes
+ApplicationEventPublisher ..> NotificationEventListener : notifies
+
+' Notifications (Observer + Factory)
+Notification "0..*" --> "1" Driver : sent to
+NotificationEventListener --> NotificationChannelFactory
+NotificationEventListener --> DriverRepository
+NotificationEventListener --> NotificationRepository
+NotificationRepository ..> Notification : stores
+NotificationChannelFactory "1" o-- "1..*" NotificationChannel : creates
+NotificationChannel <|.. EmailNotificationChannel
+NotificationChannel <|.. SmsNotificationChannel
+NotificationChannel <|.. PushNotificationChannel
+
+' ═════════════════════════════ layout hints ═════════════════════════════
+' Hidden links only place each enum next to the class that uses it; they are not relationships.
+PricingRule -[hidden]right- PricingStrategyType
+ParkingSpot -[hidden]right- SpotType
+ParkingSpot -[hidden]right- SpotStatus
+Reservation -[hidden]right- ReservationStatus
+ParkingSession -[hidden]right- SessionStatus
+Payment -[hidden]right- PaymentStatus
+Payment -[hidden]right- PaymentMethod
+Notification -[hidden]right- ChannelType
+' Stack sibling classes in two rows so the diagram is not one very wide line.
+HourlyPricingStrategy -[hidden]down- TieredPricingStrategy
+FlatRatePricingStrategy -[hidden]down- NightWeekendPricingStrategy
+AvailableState -[hidden]down- OccupiedState
+ReservedState -[hidden]down- OutOfServiceState
+ReservationCreatedEvent -[hidden]down- SessionCompletedEvent
+ReservationCancelledEvent -[hidden]down- PaymentCompletedEvent
+ReservationExpiredEvent -[hidden]down- PaymentFailedEvent
+
+' ═════════════════════════════ pattern notes ═════════════════════════════
+
+note as NStrategy
+<b>Strategy</b> (pricing)
+Strategy: PricingStrategy
+Concrete strategies: Hourly, FlatRate, Tiered, NightWeekend
+Context: ParkingLocation (built from its PricingRule)
+Client: ParkingSessionFacade asks for the cost
+New pricing rule = new class, no caller changes.
+end note
+NStrategy .. PricingStrategy
+NStrategy .. HourlyPricingStrategy
+NStrategy .. FlatRatePricingStrategy
+NStrategy .. TieredPricingStrategy
+NStrategy .. NightWeekendPricingStrategy
+NStrategy .. ParkingLocation
+NStrategy .. PricingRule
+NStrategy .. ParkingSessionFacade
+
+note as NState
+<b>State</b> (spot lifecycle)
+State: SpotState
+Concrete states: Available, Reserved, Occupied, OutOfService
+Context: ParkingSpot delegates every action to its state
+A transition that isn't allowed (e.g. reserving an
+occupied spot) throws IllegalSpotStateTransitionException.
+end note
+NState .. SpotState
+NState .. AvailableState
+NState .. ReservedState
+NState .. OccupiedState
+NState .. OutOfServiceState
+NState .. ParkingSpot
+NState .. IllegalSpotStateTransitionException
+
+note as NObserver
+<b>Observer</b> (domain events)
+Subject: ApplicationEventPublisher
+Publishers: ReservationService, ParkingSessionFacade
+Events: DomainEvent and its six subclasses
+Observer: NotificationEventListener (@EventListener)
+In the microservices the subject is RabbitMQ (parking.events).
+end note
+NObserver .. ApplicationEventPublisher
+NObserver .. ReservationService
+NObserver .. ParkingSessionFacade
+NObserver .. DomainEvent
+NObserver .. ReservationCreatedEvent
+NObserver .. ReservationCancelledEvent
+NObserver .. ReservationExpiredEvent
+NObserver .. SessionCompletedEvent
+NObserver .. PaymentCompletedEvent
+NObserver .. PaymentFailedEvent
+NObserver .. NotificationEventListener
+
+note as NPaymentFactory
+<b>Factory</b> (payment processors)
+Factory: PaymentProcessorFactory.create(method)
+Product: PaymentProcessor
+Concrete products: Card, Wallet (simulated,
+configurable failure rate)
+Client: ParkingSessionFacade
+end note
+NPaymentFactory .. PaymentProcessorFactory
+NPaymentFactory .. PaymentProcessor
+NPaymentFactory .. CardPaymentProcessor
+NPaymentFactory .. WalletPaymentProcessor
+NPaymentFactory .. ParkingSessionFacade
+
+note as NChannelFactory
+<b>Factory</b> (notification channels)
+Factory: NotificationChannelFactory.create(type)
+Product: NotificationChannel
+Concrete products: Email, Sms, Push (simulated)
+Client: NotificationEventListener
+end note
+NChannelFactory .. NotificationChannelFactory
+NChannelFactory .. NotificationChannel
+NChannelFactory .. EmailNotificationChannel
+NChannelFactory .. SmsNotificationChannel
+NChannelFactory .. PushNotificationChannel
+NChannelFactory .. NotificationEventListener
+
+note as NFacade
+<b>Facade</b> (ending a session)
+Facade: ParkingSessionFacade
+Client: ParkingSessionController
+endSession(): record exit → cost (Strategy) →
+payment (Factory) → release spot (State) →
+publish SessionCompletedEvent (Observer),
+all in one transaction.
+end note
+NFacade .. ParkingSessionFacade
+NFacade .. ParkingSessionController
+NFacade .. ParkingSessionRepository
+NFacade .. ParkingSpotRepository
+NFacade .. ReservationRepository
+NFacade .. PaymentRepository
+NFacade .. PaymentProcessorFactory
+NFacade .. ApplicationEventPublisher
+
+@enduml

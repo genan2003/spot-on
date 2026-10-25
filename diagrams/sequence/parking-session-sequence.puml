@@ -1,0 +1,282 @@
+@startuml parking-session-sequence
+title Driver parks: session starts on entry, ends on exit, and is paid
+
+' Exercise 4. Class and method names match diagrams/class/class-diagram.puml.
+' Patterns shown: Facade (ParkingSessionFacade coordinates everything), State (spot lifecycle),
+' Strategy (cost), Factory (payment processor, notification channel), Observer (events).
+' Activations use explicit activate/deactivate so both branches of each alt stay balanced.
+
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+skinparam note {
+  BackgroundColor #FFF8D6
+  BorderColor #9A8A3A
+}
+
+actor Driver
+participant ParkingSessionController as Ctrl
+participant GlobalExceptionHandler as ErrHandler
+participant ParkingSessionFacade as Facade
+participant ParkingSpotRepository as SpotRepo
+participant ReservationRepository as ResRepo
+participant "reservation: Reservation" as Res
+participant "spot: ParkingSpot" as Spot
+participant "state: SpotState" as State
+participant "session: ParkingSession" as Session
+participant ParkingSessionRepository as SessRepo
+participant "location: ParkingLocation" as Location
+participant "strategy: PricingStrategy" as Strategy
+participant PaymentProcessorFactory as PayFactory
+participant "processor: PaymentProcessor" as Processor
+participant "payment: Payment" as Payment
+participant PaymentRepository as PayRepo
+database Database as DB
+participant ApplicationEventPublisher as Publisher
+participant NotificationEventListener as Listener
+participant NotificationChannelFactory as ChannelFactory
+participant "channel: NotificationChannel" as Channel
+
+== Entry: start the session ==
+
+Driver -> Ctrl : POST /api/v1/parking-sessions {spotId}
+activate Ctrl
+Ctrl -> Facade : startSession(driverId, spotId)
+activate Facade
+note right of Facade
+  <b>Facade</b>: one call from the controller;
+  the facade coordinates spot, reservation and
+  session in one transaction.
+end note
+Facade -> SpotRepo : findById(spotId)
+activate SpotRepo
+SpotRepo --> Facade : spot
+deactivate SpotRepo
+Facade -> ResRepo : findByDriverIdAndSpotIdAndStatus(driverId, spotId, ACTIVE)
+activate ResRepo
+ResRepo --> Facade : Optional<Reservation>
+deactivate ResRepo
+
+alt spot is RESERVED by another driver
+  Facade --> Ctrl : IllegalSpotStateTransitionException
+  deactivate Facade
+  Ctrl -> ErrHandler : handleConflict(ex)
+  activate ErrHandler
+  ErrHandler --> Ctrl : ProblemDetail (409)
+  deactivate ErrHandler
+  Ctrl --> Driver : 409 Conflict: "B4 is reserved by another driver."
+
+else spot is free, or reserved by this driver
+  activate Facade
+  Facade -> Spot : occupy()
+  activate Spot
+  Spot -> State : occupy(spot)
+  activate State
+
+  alt state is AvailableState or ReservedState
+    State -> Spot : changeState(OccupiedState)
+    note right of State : <b>State</b>: Available or Reserved → Occupied
+    State --> Spot
+    deactivate State
+    Spot --> Facade
+    deactivate Spot
+    opt driver had reserved this spot
+      Facade -> Res : complete()
+      activate Res
+      note right of Res : status = COMPLETED
+      Res --> Facade
+      deactivate Res
+    end
+    create Session
+    Facade -> Session : new ParkingSession(driver, spot, reservation,\nentryTime = Instant.now())
+    Facade -> SessRepo : save(session)
+    activate SessRepo
+    SessRepo --> Facade : session
+    deactivate SessRepo
+    Facade --> Ctrl : session
+    deactivate Facade
+    Ctrl --> Driver : 201 Created (session, entryTime)
+
+  else state is OccupiedState or OutOfServiceState
+    activate Facade
+    activate Spot
+    activate State
+    State --> Spot : throws IllegalSpotStateTransitionException
+    deactivate State
+    Spot --> Facade : IllegalSpotStateTransitionException
+    deactivate Spot
+    Facade --> Ctrl : IllegalSpotStateTransitionException
+    deactivate Facade
+    Ctrl -> ErrHandler : handleConflict(ex)
+    activate ErrHandler
+    ErrHandler --> Ctrl : ProblemDetail (409)
+    deactivate ErrHandler
+    Ctrl --> Driver : 409 Conflict: "B4 is occupied."
+  end
+end
+deactivate Ctrl
+
+... the car is parked ...
+
+== Exit: end the session ==
+
+Driver -> Ctrl : POST /api/v1/parking-sessions/{id}/end
+activate Ctrl
+Ctrl -> Facade : endSession(sessionId)
+activate Facade
+note right of Facade
+  <b>Facade</b>, @Transactional:
+  1. record exit  2. cost (Strategy)
+  3. payment (Factory)  4. free spot (State)
+  5. publish events (Observer)
+end note
+Facade -> SessRepo : findById(sessionId)
+activate SessRepo
+SessRepo --> Facade : session
+deactivate SessRepo
+
+Facade -> Facade : exitTime = Instant.now()
+
+Facade -> Spot : getLocation()
+activate Spot
+Spot --> Facade : location
+deactivate Spot
+Facade -> Location : getPricingStrategy()
+activate Location
+Location -> Location : pricingRule.toStrategy()
+create Strategy
+Location -> Strategy : new HourlyPricingStrategy(hourlyRate)
+Location --> Facade : strategy
+deactivate Location
+Facade -> Strategy : calculateCost(entryTime, exitTime)
+activate Strategy
+note right of Strategy
+  <b>Strategy</b>: the concrete class depends on the
+  location's rule (Hourly, FlatRate, Tiered or
+  NightWeekend). Every started hour is charged.
+end note
+Strategy --> Facade : cost (BigDecimal)
+deactivate Strategy
+Facade -> Session : end(exitTime, cost)
+activate Session
+note right of Session : status = COMPLETED
+Session --> Facade
+deactivate Session
+
+create Payment
+Facade -> Payment : new Payment(session, cost,\ndriver.preferredPaymentMethod)
+Facade -> PayFactory : create(method)
+activate PayFactory
+note right of PayFactory
+  <b>Factory</b>: returns CardPaymentProcessor
+  or WalletPaymentProcessor.
+end note
+PayFactory --> Facade : processor
+deactivate PayFactory
+Facade -> Processor : process(payment)
+activate Processor
+Processor --> Facade : PaymentResult
+deactivate Processor
+
+alt result.success
+  Facade -> Payment : markCompleted()
+  activate Payment
+  Payment --> Facade
+  deactivate Payment
+else payment failed (simulated failure rate)
+  Facade -> Payment : markFailed()
+  activate Payment
+  Payment --> Facade
+  deactivate Payment
+  note right of Payment
+    The session still ends and the spot is
+    freed; the driver can retry the payment.
+  end note
+end
+Facade -> PayRepo : save(payment)
+activate PayRepo
+PayRepo --> Facade : payment
+deactivate PayRepo
+
+Facade -> Spot : release()
+activate Spot
+Spot -> State : release(spot)
+activate State
+State -> Spot : changeState(AvailableState)
+note right of State : <b>State</b>: OccupiedState → AvailableState
+State --> Spot
+deactivate State
+Spot --> Facade
+deactivate Spot
+
+Facade -> SessRepo : save(session)
+activate SessRepo
+SessRepo --> Facade : session
+deactivate SessRepo
+
+Facade -> Publisher : publishEvent(SessionCompletedEvent)
+activate Publisher
+Publisher --> Facade
+deactivate Publisher
+alt result.success
+  Facade -> Publisher : publishEvent(PaymentCompletedEvent)
+  activate Publisher
+  Publisher --> Facade
+  deactivate Publisher
+else payment failed
+  Facade -> Publisher : publishEvent(PaymentFailedEvent)
+  activate Publisher
+  Publisher --> Facade
+  deactivate Publisher
+end
+
+Facade -> DB : commit
+activate DB
+DB --> Facade : ok
+deactivate DB
+Facade --> Ctrl : session (exitTime, cost, payment status)
+deactivate Facade
+Ctrl --> Driver : 200 OK
+deactivate Ctrl
+
+note over Publisher, Channel
+  <b>Observer</b>: after the commit, the publisher delivers each event to the listener.
+  For every notification the listener also looks up the driver and saves the
+  notification, exactly as in the reserve-spot diagram.
+end note
+
+Publisher -> Listener : onSessionCompleted(event)
+activate Listener
+Listener -> ChannelFactory : create(driver.preferredChannel)
+activate ChannelFactory
+ChannelFactory --> Listener : channel
+deactivate ChannelFactory
+Listener -> Channel : send(notification)
+activate Channel
+note right of Channel : "Session at B4 ended:\n2 h 14 min, 18.00 lei."
+Channel --> Listener
+deactivate Channel
+deactivate Listener
+
+alt result.success
+  Publisher -> Listener : onPaymentCompleted(event)
+  activate Listener
+  Listener -> Channel : send(notification)
+  activate Channel
+  note right of Channel : "Paid 18.00 lei."
+  Channel --> Listener
+  deactivate Channel
+  deactivate Listener
+else payment failed
+  Publisher -> Listener : onPaymentFailed(event)
+  activate Listener
+  Listener -> Channel : send(notification)
+  activate Channel
+  note right of Channel : "Payment of 18.00 lei failed.\nTry again from your receipt."
+  Channel --> Listener
+  deactivate Channel
+  deactivate Listener
+end
+
+@enduml

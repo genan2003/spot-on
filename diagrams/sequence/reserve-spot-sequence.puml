@@ -1,0 +1,230 @@
+@startuml reserve-spot-sequence
+title Driver reserves a parking spot
+
+' Exercise 4. Class and method names match diagrams/class/class-diagram.puml.
+' Patterns shown: State (spot lifecycle), Observer (domain events → notifications),
+' Factory (notification channels). Concurrency guard: optimistic locking on ParkingSpot.version
+' plus the partial unique index on active reservations.
+' Activations use explicit activate/deactivate so both branches of each alt stay balanced.
+
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+skinparam note {
+  BackgroundColor #FFF8D6
+  BorderColor #9A8A3A
+}
+
+actor Driver
+participant ParkingLocationController as LocCtrl
+participant ParkingLocationService as LocService
+participant ReservationController as ResCtrl
+participant GlobalExceptionHandler as ErrHandler
+participant ReservationExpirationScheduler as Scheduler
+participant ReservationService as ResService
+participant ParkingSpotRepository as SpotRepo
+participant "spot: ParkingSpot" as Spot
+participant "state: SpotState" as State
+participant "reservation: Reservation" as Res
+participant ReservationRepository as ResRepo
+database Database as DB
+participant ApplicationEventPublisher as Publisher
+participant NotificationEventListener as Listener
+participant DriverRepository as DriverRepo
+participant NotificationChannelFactory as ChannelFactory
+participant "channel: NotificationChannel" as Channel
+participant NotificationRepository as NotifRepo
+
+== Check availability ==
+
+Driver -> LocCtrl : GET /api/v1/parking-locations/{id}/availability
+activate LocCtrl
+LocCtrl -> LocService : getAvailability(locationId)
+activate LocService
+LocService --> LocCtrl : Map<SpotStatus, Long>
+deactivate LocService
+LocCtrl --> Driver : 200 OK (free, reserved, occupied, out of service)
+deactivate LocCtrl
+
+== Reserve a spot ==
+
+Driver -> ResCtrl : POST /api/v1/reservations {spotId}
+activate ResCtrl
+ResCtrl -> ResService : reserve(driverId, spotId)
+activate ResService
+note right of ResService : @Transactional
+ResService -> SpotRepo : findById(spotId)
+activate SpotRepo
+SpotRepo --> ResService : spot (version = n)
+deactivate SpotRepo
+ResService -> Spot : reserve()
+activate Spot
+Spot -> State : reserve(spot)
+activate State
+
+alt state is AvailableState
+  State -> Spot : changeState(ReservedState)
+  note right of State
+    <b>State</b>: AvailableState allows reserve(),
+    so the spot moves to ReservedState
+    (status = RESERVED).
+  end note
+  State --> Spot
+  deactivate State
+  Spot --> ResService
+  deactivate Spot
+
+  create Res
+  ResService -> Res : new Reservation(driver, spot,\nexpiresAt = now + 15 min)
+  ResService -> ResRepo : save(reservation)
+  activate ResRepo
+  ResRepo --> ResService : reservation
+  deactivate ResRepo
+  ResService -> Publisher : publishEvent(ReservationCreatedEvent)
+  activate Publisher
+  note right of Publisher
+    <b>Observer</b>: the event is held until the
+    transaction commits, then delivered to every
+    @TransactionalEventListener.
+  end note
+  Publisher --> ResService
+  deactivate Publisher
+  ResService -> DB : commit: UPDATE parking_spot … WHERE version = n;\nINSERT reservation (status = ACTIVE)
+  activate DB
+
+  alt another request reserved this spot first
+    DB --> ResService : version ≠ n, or unique index on\nactive reservations per spot violated
+    deactivate DB
+    note right of ResService
+      <b>Concurrency guard</b>: of two parallel
+      requests, exactly one commits.
+    end note
+    ResService --> ResCtrl : ObjectOptimisticLockingFailureException /\nDataIntegrityViolationException
+    deactivate ResService
+    ResCtrl -> ErrHandler : handleConflict(ex)
+    activate ErrHandler
+    ErrHandler --> ResCtrl : ProblemDetail (409)
+    deactivate ErrHandler
+    ResCtrl --> Driver : 409 Conflict: "This spot was just reserved by someone else."
+
+  else committed
+    activate DB
+    activate ResService
+    DB --> ResService : ok
+    deactivate DB
+    ResService --> ResCtrl : reservation
+    deactivate ResService
+    ResCtrl --> Driver : 201 Created (reservation, expiresAt)
+
+    Publisher -> Listener : onReservationCreated(event)
+    activate Listener
+    Listener -> DriverRepo : findById(driverId)
+    activate DriverRepo
+    DriverRepo --> Listener : driver
+    deactivate DriverRepo
+    Listener -> ChannelFactory : create(driver.preferredChannel)
+    activate ChannelFactory
+    note right of ChannelFactory : <b>Factory</b>: returns the Email,\nSms or Push channel
+    ChannelFactory --> Listener : channel
+    deactivate ChannelFactory
+    Listener -> Channel : send(notification)
+    activate Channel
+    note right of Channel : "B4 at Central Garage is held\nfor you until 14:47."
+    Channel --> Listener
+    deactivate Channel
+    Listener -> NotifRepo : save(notification)
+    activate NotifRepo
+    NotifRepo --> Listener
+    deactivate NotifRepo
+    deactivate Listener
+  end
+
+else state is ReservedState, OccupiedState or OutOfServiceState
+  activate ResService
+  activate Spot
+  activate State
+  State --> Spot : throws IllegalSpotStateTransitionException
+  deactivate State
+  note right of State
+    <b>State</b>: only AvailableState allows
+    reserve(); every other state rejects it.
+  end note
+  Spot --> ResService : IllegalSpotStateTransitionException
+  deactivate Spot
+  ResService --> ResCtrl : IllegalSpotStateTransitionException\n(transaction rolled back)
+  deactivate ResService
+  ResCtrl -> ErrHandler : handleConflict(ex)
+  activate ErrHandler
+  ErrHandler --> ResCtrl : ProblemDetail (409)
+  deactivate ErrHandler
+  ResCtrl --> Driver : 409 Conflict: "Spot B4 is already reserved."
+end
+deactivate ResCtrl
+
+== Reservation expires ==
+
+opt driver does not start a session within 15 minutes
+  [-> Scheduler : @Scheduled timer (every minute)
+  activate Scheduler
+  Scheduler -> Scheduler : expireReservations()
+  Scheduler -> ResService : expireOverdue(now)
+  activate ResService
+  ResService -> ResRepo : findByStatusAndExpiresAtBefore(ACTIVE, now)
+  activate ResRepo
+  ResRepo --> ResService : overdue reservations
+  deactivate ResRepo
+
+  loop each overdue reservation
+    ResService -> Res : expire()
+    activate Res
+    note right of Res : status = EXPIRED
+    Res --> ResService
+    deactivate Res
+    ResService -> Spot : release()
+    activate Spot
+    Spot -> State : release(spot)
+    activate State
+    State -> Spot : changeState(AvailableState)
+    note right of State : <b>State</b>: ReservedState → AvailableState
+    State --> Spot
+    deactivate State
+    Spot --> ResService
+    deactivate Spot
+    ResService -> Publisher : publishEvent(ReservationExpiredEvent)
+    activate Publisher
+    Publisher --> ResService
+    deactivate Publisher
+  end
+
+  ResService -> DB : commit
+  activate DB
+  DB --> ResService : ok
+  deactivate DB
+  ResService --> Scheduler : number expired
+  deactivate ResService
+  deactivate Scheduler
+
+  Publisher -> Listener : onReservationExpired(event)
+  activate Listener
+  Listener -> DriverRepo : findById(driverId)
+  activate DriverRepo
+  DriverRepo --> Listener : driver
+  deactivate DriverRepo
+  Listener -> ChannelFactory : create(driver.preferredChannel)
+  activate ChannelFactory
+  ChannelFactory --> Listener : channel
+  deactivate ChannelFactory
+  Listener -> Channel : send(notification)
+  activate Channel
+  note right of Channel : "Your reservation for B4 expired,\nso the spot is free again."
+  Channel --> Listener
+  deactivate Channel
+  Listener -> NotifRepo : save(notification)
+  activate NotifRepo
+  NotifRepo --> Listener
+  deactivate NotifRepo
+  deactivate Listener
+end
+
+@enduml
