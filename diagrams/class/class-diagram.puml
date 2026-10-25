@@ -5,6 +5,7 @@ title Smart Parking Management System: class diagram
 ' (com.smartparking.poc.<package>); package boxes are left out because Graphviz overlaps them
 ' when notes link across packages. Each design pattern is marked by a note linked to every
 ' class that takes part in it; names match docs/design-patterns.md.
+' Left out on purpose: request/response DTOs, Spring configuration and the demo runner in poc/.
 
 hide empty members
 skinparam classAttributeIconSize 0
@@ -44,16 +45,21 @@ class ParkingLocation {
   - pricingRule: PricingRule
   + getPricingStrategy(): PricingStrategy
   + addSpot(spot: ParkingSpot): void
+  + changePricingRule(rule: PricingRule): void
   + countAvailable(): int
 }
 class ParkingLocationService {
-  + createLocation(name: String, address: String, latitude: double, longitude: double): ParkingLocation
-  + addSpots(locationId: UUID, level: int, zone: String, count: int, type: SpotType): List<ParkingSpot>
+  + createLocation(name: String, address: String, latitude: double, longitude: double, rule: PricingRule): ParkingLocation
+  + addSpots(locationId: UUID, level: int, zone: String, count: int, type: SpotType, evCharging: boolean, accessible: boolean): List<ParkingSpot>
   + updatePricingRule(locationId: UUID, rule: PricingRule): void
   + setOutOfService(spotId: UUID, outOfService: boolean): ParkingSpot
   + getAvailability(locationId: UUID): Map<SpotStatus, Long>
 }
 class ParkingLocationController
+interface ParkingLocationRepository <<Repository>> {
+  + findById(id: UUID): Optional<ParkingLocation>
+  + save(location: ParkingLocation): ParkingLocation
+}
 
 ' ───────────────────────────── pricing (Strategy) ─────────────────────────────
 ' package pricing
@@ -115,6 +121,7 @@ class ParkingSpot {
   + returnToService(): void
   ~ changeState(newState: SpotState): void
   + getLocation(): ParkingLocation
+  + assignTo(location: ParkingLocation): void
 }
 enum SpotType {
   STANDARD
@@ -129,6 +136,7 @@ enum SpotStatus {
   OUT_OF_SERVICE
 }
 interface SpotState {
+  ' default methods throw IllegalSpotStateTransitionException; states override what they allow
   + reserve(spot: ParkingSpot): void
   + occupy(spot: ParkingSpot): void
   + release(spot: ParkingSpot): void
@@ -185,13 +193,18 @@ class ReservationExpirationScheduler {
   + expireReservations(): void
 }
 class ReservationController
-class GlobalExceptionHandler <<RestControllerAdvice>> {
-  + handleConflict(ex: RuntimeException): ProblemDetail
-}
 interface ReservationRepository <<Repository>> {
+  + findById(id: UUID): Optional<Reservation>
   + save(reservation: Reservation): Reservation
   + findByDriverIdAndSpotIdAndStatus(driverId: UUID, spotId: UUID, status: ReservationStatus): Optional<Reservation>
   + findByStatusAndExpiresAtBefore(status: ReservationStatus, time: Instant): List<Reservation>
+}
+
+' ───────────────────────────── common
+class GlobalExceptionHandler <<RestControllerAdvice>> {
+  + handleConflict(ex: RuntimeException): ProblemDetail
+  + handleConcurrentChange(ex: RuntimeException): ProblemDetail
+  + handleNotFound(ex: EntityNotFoundException): ProblemDetail
 }
 
 ' ───────────────────────────── session (Facade) ─────────────────────────────
@@ -227,8 +240,8 @@ class Payment {
   - method: PaymentMethod
   - status: PaymentStatus
   - processedAt: Instant
-  + markCompleted(): void
-  + markFailed(): void
+  + markCompleted(at: Instant): void
+  + markFailed(at: Instant): void
 }
 enum PaymentMethod {
   CARD
@@ -248,10 +261,12 @@ interface PaymentProcessor {
 }
 class CardPaymentProcessor {
   - failureRate: double
+  - random: RandomGenerator
   + process(payment: Payment): PaymentResult
 }
 class WalletPaymentProcessor {
   - failureRate: double
+  - random: RandomGenerator
   + process(payment: Payment): PaymentResult
 }
 class PaymentResult <<record>> {
@@ -272,31 +287,37 @@ class ReservationCreatedEvent {
   - reservationId: UUID
   - driverId: UUID
   - spotId: UUID
+  - spotCode: String
 }
 class ReservationCancelledEvent {
   - reservationId: UUID
   - driverId: UUID
   - spotId: UUID
+  - spotCode: String
 }
 class ReservationExpiredEvent {
   - reservationId: UUID
   - driverId: UUID
   - spotId: UUID
+  - spotCode: String
 }
 class SessionCompletedEvent {
   - sessionId: UUID
   - driverId: UUID
+  - spotCode: String
   - cost: BigDecimal
 }
 class PaymentCompletedEvent {
   - paymentId: UUID
   - sessionId: UUID
   - driverId: UUID
+  - amount: BigDecimal
 }
 class PaymentFailedEvent {
   - paymentId: UUID
   - sessionId: UUID
   - driverId: UUID
+  - amount: BigDecimal
 }
 
 ' package "org.springframework.context" as spring
@@ -329,6 +350,7 @@ class NotificationEventListener {
   + onPaymentFailed(event: PaymentFailedEvent): void
 }
 class NotificationChannelFactory {
+  - channels: Map<ChannelType, NotificationChannel>
   + create(type: ChannelType): NotificationChannel
 }
 interface NotificationChannel {
@@ -357,7 +379,9 @@ DriverRepository ..> Driver : stores
 ParkingLocation "1" *-- "0..*" ParkingSpot : contains
 ParkingLocation "1" *-- "1" PricingRule : priced by
 ParkingLocationController --> ParkingLocationService
+ParkingLocationService --> ParkingLocationRepository
 ParkingLocationService --> ParkingSpotRepository
+ParkingLocationRepository ..> ParkingLocation : stores
 
 ' Strategy
 PricingStrategy <|.. HourlyPricingStrategy
@@ -382,6 +406,7 @@ ReservationController --> ReservationService
 ReservationExpirationScheduler --> ReservationService
 ReservationService --> ReservationRepository
 ReservationService --> ParkingSpotRepository
+ReservationService --> DriverRepository
 ReservationService --> ApplicationEventPublisher
 GlobalExceptionHandler ..> IllegalSpotStateTransitionException : 409 Conflict
 
@@ -393,6 +418,7 @@ ParkingSessionController --> ParkingSessionFacade
 ParkingSessionFacade --> ParkingSessionRepository
 ParkingSessionFacade --> ParkingSpotRepository
 ParkingSessionFacade --> ReservationRepository
+ParkingSessionFacade --> DriverRepository
 ParkingSessionFacade --> PaymentRepository
 ParkingSessionFacade --> PaymentProcessorFactory
 ParkingSessionFacade --> ApplicationEventPublisher

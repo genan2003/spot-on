@@ -194,7 +194,7 @@ depend on all of them, and adding a new reaction (for example an audit log) woul
 |---|---|---|
 | Subject (publisher) | Services publish through Spring's `ApplicationEventPublisher` | Services publish to the RabbitMQ topic exchange `parking.events` |
 | Events | `ReservationCreatedEvent`, `ReservationCancelledEvent`, `ReservationExpiredEvent`, `SessionCompletedEvent`, `PaymentCompletedEvent`, `PaymentFailedEvent` | The same events as JSON messages, with routing keys like `reservation.created` |
-| Observers (listeners) | `NotificationEventListener` (`@EventListener` methods) | One queue per consuming service, with a `@RabbitListener` |
+| Observers (listeners) | `NotificationEventListener` (`@TransactionalEventListener` methods, run after the commit) | One queue per consuming service, with a `@RabbitListener` |
 
 Publishers only announce what happened. They don't know who listens or how many listeners there are.
 
@@ -323,6 +323,7 @@ Observer (`ReservationCreatedEvent` → notification).
 | Factory | `payment`, `notification` | payment-service (processors), notification-service (channels) |
 | Facade | `session` | reservation-service |
 
-The class diagram (Phase 2) and the PoC code (Phase 4) are not written yet. When they are, each
-pattern there carries a UML note or Javadoc naming the pattern and the role of each class, using the
-names in this document.
+Each pattern is marked in the class diagram by a UML note, and in the PoC code by a Javadoc line
+naming the pattern and the class's role. `poc/README.md` maps every class to its pattern and role,
+and `./mvnw spring-boot:run -Dspring-boot.run.profiles=demo` plays a scenario that shows all five
+patterns working together.

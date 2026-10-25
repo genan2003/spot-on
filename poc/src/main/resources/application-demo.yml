@@ -1,0 +1,21 @@
+# Demo run: no web server, the DemoRunner plays the scenario and the app exits.
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+
+smartparking:
+  payment:
+    # With the demo's fixed random seed, the first payment succeeds and the second fails.
+    failure-rate: 0.5
+
+logging:
+  level:
+    root: WARN
+    com.smartparking.poc: INFO
+    com.smartparking.poc.PocApplication: WARN
+    # The concurrency step expects one constraint violation; don't print it as an error.
+    org.hibernate: OFF
+    org.flywaydb: ERROR
+  pattern:
+    console: "      %msg%n"

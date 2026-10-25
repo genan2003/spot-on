@@ -1,5 +1,27 @@
+server:
+  port: ${SERVER_PORT:8090}
+
 spring:
   application:
     name: poc
-  main:
-    web-application-type: none
+  datasource:
+    # In-memory H2; a random name gives every Spring context (e.g. each test setup) its own database.
+    # LOCK_TIMEOUT lets a second writer wait for the first commit, then fail the @Version check.
+    url: jdbc:h2:mem:poc-${random.uuid};DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000
+    username: sa
+    password: ""
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Schema is owned by Flyway (src/main/resources/db/migration); Hibernate only checks it.
+      ddl-auto: validate
+  mvc:
+    problemdetails:
+      enabled: true
+
+smartparking:
+  reservation:
+    duration: 15m
+    expiry-check: 1m
+  payment:
+    failure-rate: 0.2

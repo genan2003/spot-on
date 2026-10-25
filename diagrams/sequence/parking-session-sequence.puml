@@ -20,6 +20,7 @@ participant ParkingSessionController as Ctrl
 participant GlobalExceptionHandler as ErrHandler
 participant ParkingSessionFacade as Facade
 participant ParkingSpotRepository as SpotRepo
+participant DriverRepository as DriverRepo
 participant ReservationRepository as ResRepo
 participant "reservation: Reservation" as Res
 participant "spot: ParkingSpot" as Spot
@@ -53,6 +54,10 @@ Facade -> SpotRepo : findById(spotId)
 activate SpotRepo
 SpotRepo --> Facade : spot
 deactivate SpotRepo
+Facade -> DriverRepo : findById(driverId)
+activate DriverRepo
+DriverRepo --> Facade : driver
+deactivate DriverRepo
 Facade -> ResRepo : findByDriverIdAndSpotIdAndStatus(driverId, spotId, ACTIVE)
 activate ResRepo
 ResRepo --> Facade : Optional<Reservation>
@@ -65,7 +70,7 @@ alt spot is RESERVED by another driver
   activate ErrHandler
   ErrHandler --> Ctrl : ProblemDetail (409)
   deactivate ErrHandler
-  Ctrl --> Driver : 409 Conflict: "B4 is reserved by another driver."
+  Ctrl --> Driver : 409 Conflict: "Spot B4 is reserved by another driver."
 
 else spot is free, or reserved by this driver
   activate Facade
@@ -112,7 +117,7 @@ else spot is free, or reserved by this driver
     activate ErrHandler
     ErrHandler --> Ctrl : ProblemDetail (409)
     deactivate ErrHandler
-    Ctrl --> Driver : 409 Conflict: "B4 is occupied."
+    Ctrl --> Driver : 409 Conflict: "Spot B4 is occupied, so it can't be occupied."
   end
 end
 deactivate Ctrl
@@ -180,12 +185,12 @@ Processor --> Facade : PaymentResult
 deactivate Processor
 
 alt result.success
-  Facade -> Payment : markCompleted()
+  Facade -> Payment : markCompleted(exitTime)
   activate Payment
   Payment --> Facade
   deactivate Payment
 else payment failed (simulated failure rate)
-  Facade -> Payment : markFailed()
+  Facade -> Payment : markFailed(exitTime)
   activate Payment
   Payment --> Facade
   deactivate Payment
@@ -235,9 +240,9 @@ Facade -> DB : commit
 activate DB
 DB --> Facade : ok
 deactivate DB
-Facade --> Ctrl : session (exitTime, cost, payment status)
+Facade --> Ctrl : session (exitTime, cost)
 deactivate Facade
-Ctrl --> Driver : 200 OK
+Ctrl --> Driver : 200 OK (payment result arrives as a notification)
 deactivate Ctrl
 
 note over Publisher, Channel

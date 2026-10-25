@@ -23,6 +23,7 @@ participant ReservationController as ResCtrl
 participant GlobalExceptionHandler as ErrHandler
 participant ReservationExpirationScheduler as Scheduler
 participant ReservationService as ResService
+participant DriverRepository as DriverRepo
 participant ParkingSpotRepository as SpotRepo
 participant "spot: ParkingSpot" as Spot
 participant "state: SpotState" as State
@@ -31,7 +32,6 @@ participant ReservationRepository as ResRepo
 database Database as DB
 participant ApplicationEventPublisher as Publisher
 participant NotificationEventListener as Listener
-participant DriverRepository as DriverRepo
 participant NotificationChannelFactory as ChannelFactory
 participant "channel: NotificationChannel" as Channel
 participant NotificationRepository as NotifRepo
@@ -54,6 +54,10 @@ activate ResCtrl
 ResCtrl -> ResService : reserve(driverId, spotId)
 activate ResService
 note right of ResService : @Transactional
+ResService -> DriverRepo : findById(driverId)
+activate DriverRepo
+DriverRepo --> ResService : driver
+deactivate DriverRepo
 ResService -> SpotRepo : findById(spotId)
 activate SpotRepo
 SpotRepo --> ResService : spot (version = n)
@@ -76,7 +80,7 @@ alt state is AvailableState
   deactivate Spot
 
   create Res
-  ResService -> Res : new Reservation(driver, spot,\nexpiresAt = now + 15 min)
+  ResService -> Res : new Reservation(driver, spot,\ncreatedAt = now, expiresAt = now + 15 min)
   ResService -> ResRepo : save(reservation)
   activate ResRepo
   ResRepo --> ResService : reservation
@@ -102,11 +106,11 @@ alt state is AvailableState
     end note
     ResService --> ResCtrl : ObjectOptimisticLockingFailureException /\nDataIntegrityViolationException
     deactivate ResService
-    ResCtrl -> ErrHandler : handleConflict(ex)
+    ResCtrl -> ErrHandler : handleConcurrentChange(ex)
     activate ErrHandler
     ErrHandler --> ResCtrl : ProblemDetail (409)
     deactivate ErrHandler
-    ResCtrl --> Driver : 409 Conflict: "This spot was just reserved by someone else."
+    ResCtrl --> Driver : 409 Conflict: "Someone else changed this spot a moment ago."
 
   else committed
     activate DB
@@ -158,7 +162,7 @@ else state is ReservedState, OccupiedState or OutOfServiceState
   activate ErrHandler
   ErrHandler --> ResCtrl : ProblemDetail (409)
   deactivate ErrHandler
-  ResCtrl --> Driver : 409 Conflict: "Spot B4 is already reserved."
+  ResCtrl --> Driver : 409 Conflict: "Spot B4 is reserved, so it can't be reserved."
 end
 deactivate ResCtrl
 
