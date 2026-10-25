@@ -7,7 +7,7 @@ Administrators manage parking locations, spaces, prices, and availability.
 
 - Java 21 (Maven is not needed; each module ships the Maven wrapper `./mvnw`)
 - Docker with Docker Compose
-- Node.js (only to run the Postman collection with Newman)
+- Node.js 22 (for the frontend dev server and to run the Postman collection with Newman)
 
 ## Run everything
 
@@ -17,6 +17,7 @@ docker compose up --build
 
 | Component | URL |
 |---|---|
+| Frontend (driver app, admin dashboard at `/admin`) | http://localhost:3000 |
 | Gateway (single entry point) | http://localhost:8080 |
 | parking-service | http://localhost:8081 |
 | reservation-service | http://localhost:8082 |
@@ -38,6 +39,23 @@ cd parking-service
 ./mvnw clean verify                      # build and test (Testcontainers needs Docker)
 ```
 
+## Frontend
+
+React, Vite, TypeScript and Tailwind, in `frontend/`.
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173, proxies /api and /ws to the gateway on 8080
+npm run lint
+npm run build
+```
+
+`frontend/.env.development` sets `VITE_USE_MOCKS=true`, so the dev server runs on in-memory demo data
+(three car parks in Cluj-Napoca, other drivers coming and going, a 20% simulated payment failure rate).
+Demo data resets when the page reloads. Set it to `false` to use the real services through the gateway.
+The Docker image always uses the real services.
+
 ## API tests
 
 ```bash
@@ -48,6 +66,7 @@ npx newman run postman/smart-parking.postman_collection.json -e postman/local.po
 
 | Path | Contents |
 |---|---|
+| `frontend/` | Driver app and admin dashboard |
 | `gateway/` | Spring Cloud Gateway, routes `/api/v1/**` to the services |
 | `parking-service/` | Locations, spots, pricing rules, availability, real-time status |
 | `reservation-service/` | Reservations, expiration, parking sessions, cost calculation |

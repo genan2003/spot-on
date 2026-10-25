@@ -96,5 +96,12 @@ services:
       - payment-service
       - notification-service
 
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+
 volumes:
   postgres-data:
