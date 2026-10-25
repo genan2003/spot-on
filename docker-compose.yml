@@ -1,0 +1,100 @@
+name: smart-parking
+
+# Shared settings for the four business services (each still gets its own database).
+x-service-env: &service-env
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_USER: smartparking
+  DB_PASSWORD: smartparking
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: 5672
+  RABBITMQ_USER: guest
+  RABBITMQ_PASSWORD: guest
+
+x-service-deps: &service-deps
+  postgres:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: smartparking
+      POSTGRES_PASSWORD: smartparking
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartparking"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  parking-service:
+    build: ./parking-service
+    environment:
+      <<: *service-env
+      DB_NAME: parking_db
+    ports:
+      - "8081:8081"
+    depends_on: *service-deps
+
+  reservation-service:
+    build: ./reservation-service
+    environment:
+      <<: *service-env
+      DB_NAME: reservation_db
+    ports:
+      - "8082:8082"
+    depends_on: *service-deps
+
+  payment-service:
+    build: ./payment-service
+    environment:
+      <<: *service-env
+      DB_NAME: payment_db
+    ports:
+      - "8083:8083"
+    depends_on: *service-deps
+
+  notification-service:
+    build: ./notification-service
+    environment:
+      <<: *service-env
+      DB_NAME: notification_db
+    ports:
+      - "8084:8084"
+    depends_on: *service-deps
+
+  gateway:
+    build: ./gateway
+    environment:
+      PARKING_SERVICE_URL: http://parking-service:8081
+      RESERVATION_SERVICE_URL: http://reservation-service:8082
+      PAYMENT_SERVICE_URL: http://payment-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+    ports:
+      - "8080:8080"
+    depends_on:
+      - parking-service
+      - reservation-service
+      - payment-service
+      - notification-service
+
+volumes:
+  postgres-data:

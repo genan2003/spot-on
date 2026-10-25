@@ -1,0 +1,26 @@
+server:
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: reservation-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:reservation_db}
+    username: ${DB_USER:smartparking}
+    password: ${DB_PASSWORD:smartparking}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Schema is owned by Flyway (src/main/resources/db/migration); Hibernate only checks it.
+      ddl-auto: validate
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

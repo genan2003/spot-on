@@ -1,0 +1,16 @@
+CLAUDE.md
+
+# Build output
+target/
+HELP.md
+node_modules/
+dist/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Local environment
+.env

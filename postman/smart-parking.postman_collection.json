@@ -1,0 +1,40 @@
+{
+  "info": {
+    "name": "Smart Parking",
+    "description": "All requests go through the gateway ({{baseUrl}}). One folder per service/feature.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Gateway",
+      "item": [
+        {
+          "name": "Health check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Gateway is up', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/actuator/health"
+          }
+        }
+      ]
+    },
+    { "name": "Parking locations", "item": [] },
+    { "name": "Reservations", "item": [] },
+    { "name": "Parking sessions", "item": [] },
+    { "name": "Payments", "item": [] },
+    { "name": "Notifications", "item": [] }
+  ]
+}

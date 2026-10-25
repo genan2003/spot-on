@@ -1,0 +1,38 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: parking-service
+              uri: ${PARKING_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/parking-locations/**,/api/v1/spots/**
+            # Real-time spot status (WebSocket upgrade is proxied on the same route type)
+            - id: parking-service-ws
+              uri: ${PARKING_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/ws/**
+            - id: reservation-service
+              uri: ${RESERVATION_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/reservations/**,/api/v1/parking-sessions/**
+            - id: payment-service
+              uri: ${PAYMENT_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/payments/**
+            - id: notification-service
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/notifications/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
