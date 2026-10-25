@@ -1,0 +1,67 @@
+@startuml monolithic-component
+title Monolithic architecture: modules and their interfaces
+
+' Exercise 6. One deployable Spring Boot application; modules talk through in-process
+' interfaces and Spring application events (Observer), as in the PoC.
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor Driver
+actor Admin
+
+component "Frontend (React)" as FE
+
+component "Smart Parking application (one JAR)" as App {
+  component "Web layer\nREST controllers + WebSocket" as Web
+  component "Location management\nParkingLocationService" as Loc
+  component "Spot availability\nParkingSpot + SpotState" as Spot
+  component "Pricing\nPricingStrategy" as Pricing
+  component "Reservations\nReservationService\n+ expiration scheduler" as Res
+  component "Parking sessions\nParkingSessionFacade" as Sess
+  component "Payments\nPaymentProcessorFactory" as Pay
+  component "Notifications\nNotificationEventListener\n+ NotificationChannelFactory" as Notif
+  component "In-process event bus\nApplicationEventPublisher" as Bus
+
+  interface "ILocationAdmin" as ILoc
+  interface "ISpotLifecycle\nreserve / occupy / release" as ISpot
+  interface "IPricing\ncalculateCost" as IPricing
+  interface "IReservations" as IRes
+  interface "ISessions\nstartSession / endSession" as ISess
+  interface "IPaymentProcessor" as IPay
+  interface "IDomainEvents\npublishEvent" as IBus
+}
+
+database "PostgreSQL\none schema, all tables" as DB
+component "Email / SMS / push\nproviders (simulated)" as Providers
+component "Payment provider\n(simulated)" as PSP
+
+Driver --> FE
+Admin --> FE
+FE --> Web : HTTPS REST /api/v1\nWebSocket /ws
+
+Loc -- ILoc
+Spot -- ISpot
+Pricing -- IPricing
+Res -- IRes
+Sess -- ISess
+Pay -- IPay
+Bus -- IBus
+
+Web ..> ILoc
+Web ..> IRes
+Web ..> ISess
+Res ..> ISpot
+Sess ..> ISpot
+Sess ..> IPricing
+Sess ..> IPay
+Res ..> IBus : ReservationCreated/\nExpired events
+Sess ..> IBus : SessionCompleted,\nPayment* events
+Bus ..> Notif : delivers events\n(after commit)
+Bus ..> Web : spot status changes\n→ WebSocket push
+
+Pay --> PSP
+Notif --> Providers
+App --> DB : JDBC, one transaction\nspans all modules
+
+@enduml

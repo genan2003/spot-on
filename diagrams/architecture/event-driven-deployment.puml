@@ -1,0 +1,68 @@
+@startuml event-driven-deployment
+title Event-driven architecture: deployment
+
+' Exercise 6. A replicated broker cluster sits in the middle. Each service runs as a consumer
+' group with several instances; topics are partitioned by spotId, so every event for one spot
+' is handled in order by one instance. Every service keeps its own store.
+
+skinparam shadowing false
+left to right direction
+
+actor "Driver / Admin" as User
+node "Browser or phone" as Device
+
+node "Edge (×2 behind a load balancer)" as Edge {
+  artifact "Command API" as Cmd
+  artifact "Push service (WebSocket)" as Push
+}
+
+node "Kafka cluster (3 brokers, replication factor 3)" as Cluster {
+  node "broker-1" as B1
+  node "broker-2" as B2
+  node "broker-3" as B3
+  storage "Event log\n(retained, replayable)" as Log
+}
+
+node "Consumer groups (Kubernetes or Docker hosts)" as Workers {
+  node "reservation-service × N" as Res
+  node "spot-service × N\n(partitions by spotId)" as Spot
+  node "session-service × N" as Sess
+  node "payment-service × N" as Pay
+  node "notification-service × N" as Notif
+  node "availability-view × N" as View
+}
+
+node "Data stores" as Stores {
+  database "reservation_db" as RDB
+  database "spot_db" as SDB
+  database "session_db\n(+ pricing projection)" as SessDB
+  database "payment_db" as PDB
+  database "notification_db" as NDB
+  database "Redis\navailability read model" as Redis
+}
+
+User --> Device
+Device --> Cmd : HTTPS commands
+Device --> View : HTTPS queries
+Device <-- Push : WebSocket
+
+Cmd --> Cluster : produce commands
+Cluster --> Push : consume
+Cluster <--> Res : produce / consume
+Cluster <--> Spot : produce / consume
+Cluster <--> Sess : produce / consume
+Cluster <--> Pay : produce / consume
+Cluster --> Notif : consume
+Cluster --> View : consume
+B1 -- Log
+B2 -- Log
+B3 -- Log
+
+Res --> RDB
+Spot --> SDB
+Sess --> SessDB
+Pay --> PDB
+Notif --> NDB
+View --> Redis
+
+@enduml

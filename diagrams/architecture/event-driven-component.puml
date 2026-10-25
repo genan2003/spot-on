@@ -1,0 +1,63 @@
+@startuml event-driven-component
+title Event-driven architecture: producers, topics and consumers
+
+' Exercise 6. Services never call each other: every interaction is an event on a topic.
+' Reserving a spot is a choreographed saga; availability is a read model built from events (CQRS).
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor Driver
+actor Admin
+component "Frontend\nReact SPA" as FE
+
+component "Command API\n(gateway)\naccepts commands,\nanswers 202 Accepted" as Cmd
+component "Push service\nWebSocket to clients" as Push
+component "Availability view\nread model (CQRS)" as View
+
+frame "Event broker" as Broker {
+  queue "reservations" as TRes
+  queue "spots" as TSpot
+  queue "sessions" as TSess
+  queue "payments" as TPay
+  queue "pricing" as TPrice
+}
+
+component "Reservation service\nsaga, expiry timers" as Res
+component "Spot service\nParkingSpot + SpotState,\nsingle writer per spot" as Spot
+component "Session service\nParkingSessionFacade,\npricing projection" as Sess
+component "Payment service\nPaymentProcessorFactory" as Pay
+component "Notification service\nNotificationChannelFactory" as Notif
+component "Location admin service" as Loc
+
+Driver --> FE
+Admin --> FE
+FE --> Cmd : commands (HTTPS)
+FE --> View : queries (HTTPS)
+Push --> FE : live updates (WebSocket)
+
+Cmd --> TRes : ReservationRequested,\nReservationCancelRequested
+Cmd --> TSess : SessionStartRequested,\nSessionEndRequested
+Loc --> TPrice : PricingRuleChanged
+Loc --> TSpot : SpotAdded, SpotClosed
+
+TRes --> Spot : ReservationRequested
+Spot --> TSpot : SpotReserved / SpotReservationRejected,\nSpotStatusChanged
+TSpot --> Res : SpotReserved / Rejected
+Res --> TRes : ReservationConfirmed / Rejected,\nReservationExpired
+
+TSess --> Spot : SessionStarted / SessionCompleted\n(occupy / release)
+TPrice --> Sess : PricingRuleChanged
+TSess --> Sess : start / end requests
+Sess --> TSess : SessionStarted,\nSessionCompleted (cost via Strategy)
+TSess --> Pay : SessionCompleted
+Pay --> TPay : PaymentCompleted / PaymentFailed
+
+TSpot --> View : SpotStatusChanged
+TSpot --> Push
+TRes --> Push
+TRes --> Notif
+TSess --> Notif
+TPay --> Notif
+
+@enduml

@@ -1,0 +1,40 @@
+@startuml monolithic-deployment
+title Monolithic architecture: deployment
+
+' Exercise 6. One application artifact, one database. Scaling means running more copies
+' of the whole application behind a load balancer; they all share the same database.
+
+skinparam shadowing false
+
+actor "Driver / Admin" as User
+
+node "Browser or phone" as Device {
+  artifact "React SPA" as SPA
+}
+
+node "Application server (VM)" as AppServer {
+  node "nginx" as Nginx {
+    artifact "SPA static files" as Static
+  }
+  node "JVM (Docker container) × N" as Jvm {
+    artifact "smart-parking.jar\nall modules" as Jar
+  }
+}
+
+node "Database server" as DbServer {
+  database "PostgreSQL\nsmart_parking" as DB
+}
+
+cloud "External services" as Ext {
+  component "Email / SMS / push" as Msg
+  component "Payment provider" as PSP
+}
+
+User --> Device
+Device --> Nginx : HTTPS 443
+Nginx --> Jar : HTTP 8080 /api, /ws\n(load balanced)
+Jar --> DB : JDBC 5432
+Jar --> Msg : HTTPS
+Jar --> PSP : HTTPS
+
+@enduml

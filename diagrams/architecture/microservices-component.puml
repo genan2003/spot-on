@@ -1,0 +1,61 @@
+@startuml microservices-component
+title Microservices architecture: services, REST and RabbitMQ
+
+' Exercise 6. What Stage 2 builds. Synchronous REST where the caller needs an answer now
+' (locking a spot, reading a pricing rule); RabbitMQ events for side effects.
+' Routing keys match the messaging table in CLAUDE.md.
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor Driver
+actor Admin
+component "Frontend\nReact SPA" as FE
+
+component "API gateway\nSpring Cloud Gateway" as GW
+
+component "parking-service\nlocations, spots (State),\npricing rules, live status" as PS
+component "reservation-service\nreservations, sessions (Facade),\ncost (Strategy)" as RS
+component "payment-service\nsimulated payments (Factory)" as PayS
+component "notification-service\nsimulated channels (Factory)" as NS
+
+queue "RabbitMQ\ntopic exchange parking.events" as MQ
+
+database "parking_db" as PDB
+database "reservation_db" as RDB
+database "payment_db" as PayDB
+database "notification_db" as NDB
+
+Driver --> FE
+Admin --> FE
+FE --> GW : HTTPS /api/v1, /ws
+
+GW --> PS : /parking-locations/**\n/ws (STOMP, spot status)
+GW --> RS : /reservations/**\n/parking-sessions/**
+GW --> PayS : /payments/**
+GW --> NS : /notifications/**
+
+RS -left-> PS : REST (sync): reserve / occupy\nspot, get pricing rule
+
+PS --> PDB
+RS --> RDB
+PayS --> PayDB
+NS --> NDB
+
+RS ..> MQ : publishes\nreservation.created/cancelled/expired\nsession.started, session.completed
+PayS ..> MQ : publishes\npayment.completed / payment.failed
+PS ..> MQ : publishes\nspot.status-changed
+
+MQ ..> PS : reservation.*, session.*\n→ update spot status
+MQ ..> PayS : session.completed\n→ charge
+MQ ..> RS : payment.*\n→ record result
+MQ ..> NS : reservation.*, session.completed,\npayment.* → notify
+
+note bottom of MQ
+  Each consumer has its own durable queue
+  bound to the exchange; consumers dedupe
+  on eventId. Reservation expiry: TTL queue
+  + dead-letter exchange.
+end note
+
+@enduml

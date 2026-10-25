@@ -1,0 +1,66 @@
+@startuml microservices-deployment
+title Microservices architecture: Docker deployment
+
+' Exercise 6. Mirrors docker-compose.yml: one container per service, one PostgreSQL container
+' with a database per service, RabbitMQ. Deployed by the CI/CD pipeline's self-hosted runner.
+
+skinparam shadowing false
+left to right direction
+
+actor "Driver / Admin" as User
+node "Browser or phone" as Device
+
+node "Docker host (Docker Compose network: smart-parking)" as Host {
+  node "frontend\nnginx :3000→80" as FE {
+    artifact "React SPA" as SPA
+  }
+  node "gateway :8080" as GW {
+    artifact "gateway.jar" as GWJar
+  }
+  node "parking-service :8081" as PS {
+    artifact "parking-service.jar" as PSJar
+  }
+  node "reservation-service :8082" as RS {
+    artifact "reservation-service.jar" as RSJar
+  }
+  node "payment-service :8083" as PayS {
+    artifact "payment-service.jar" as PayJar
+  }
+  node "notification-service :8084" as NS {
+    artifact "notification-service.jar" as NSJar
+  }
+  node "postgres :5432\npostgres:17-alpine" as PG {
+    database "parking_db" as PDB
+    database "reservation_db" as RDB
+    database "payment_db" as PayDB
+    database "notification_db" as NDB
+  }
+  node "rabbitmq :5672, UI :15672\nrabbitmq:4-management" as MQNode {
+    queue "parking.events" as MQ
+  }
+}
+
+node "GitHub Actions\nself-hosted runner" as Runner
+
+User --> Device
+Device --> FE : HTTPS
+FE --> GW : HTTP /api, /ws
+GW --> PS : HTTP
+GW --> RS : HTTP
+GW --> PayS : HTTP
+GW --> NS : HTTP
+RS --> PS : HTTP (RestClient)
+
+PS --> PDB : JDBC
+RS --> RDB : JDBC
+PayS --> PayDB : JDBC
+NS --> NDB : JDBC
+
+PS --> MQ : AMQP
+RS --> MQ : AMQP
+PayS --> MQ : AMQP
+NS --> MQ : AMQP
+
+Runner ..> Host : docker compose up -d --build
+
+@enduml
