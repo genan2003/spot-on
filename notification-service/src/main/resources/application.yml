@@ -18,9 +18,22 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # A failing message is retried a few times, then dropped (logged) instead of looping forever.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1s
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+smartparking:
+  notification:
+    # Channel used for every notification (EMAIL, SMS or PUSH; all simulated with logs).
+    channel: ${NOTIFICATION_CHANNEL:PUSH}

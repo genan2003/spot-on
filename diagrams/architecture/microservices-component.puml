@@ -46,7 +46,7 @@ RS ..> MQ : publishes\nreservation.created/cancelled/expired\nsession.started, s
 PayS ..> MQ : publishes\npayment.completed / payment.failed
 PS ..> MQ : publishes\nspot.status-changed
 
-MQ ..> PS : reservation.*, session.*\n→ update spot status
+MQ ..> PS : reservation.cancelled/expired,\nsession.completed → free spot
 MQ ..> PayS : session.completed\n→ charge
 MQ ..> RS : payment.*\n→ record result
 MQ ..> NS : reservation.*, session.completed,\npayment.* → notify

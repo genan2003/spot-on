@@ -30,6 +30,35 @@ Each service exposes Swagger UI at `/swagger-ui.html` and its health at `/actuat
 
 Stop with `docker compose down`; add `-v` to also wipe the database.
 
+Settings you may want to change for a demo (environment variables in `docker-compose.yml`):
+
+| Variable | Service | Default | Effect |
+|---|---|---|---|
+| `RESERVATION_DURATION` | reservation-service | `15m` | How long a reserved spot is held |
+| `PAYMENT_FAILURE_RATE` | payment-service | `0.2` | Share of simulated payments that fail (0 to 1) |
+| `NOTIFICATION_CHANNEL` | notification-service | `PUSH` | `EMAIL`, `SMS` or `PUSH` (all simulated in the logs) |
+
+The gateway routes only the public API. parking-service's `/api/v1/spots/{id}/reserve|occupy|release`
+is internal: reservation-service calls it directly on the Docker network.
+
+## Messaging (RabbitMQ)
+
+Services announce what happened on the topic exchange `parking.events`; the others react on their own
+time. Open the management UI at http://localhost:15672 (guest / guest) and watch these queues while
+using the app:
+
+| Queue | Consumer | Receives |
+|---|---|---|
+| `parking.spot-holds` | parking-service | `reservation.cancelled`, `reservation.expired`, `session.completed` (frees the spot) |
+| `reservation.payment-results` | reservation-service | `payment.completed`, `payment.failed` (updates the receipt) |
+| `payment.session-completed` | payment-service | `session.completed` (charges the driver) |
+| `notification.events` | notification-service | reservation, session and payment events |
+| `reservation.expiry-delay` | — | one message per reservation; when its TTL runs out it moves to `reservation.expiry` |
+
+To see a queue hold messages, stop a consumer (`docker compose stop notification-service`), reserve and
+cancel a spot, and start it again: the waiting events are delivered and the notifications appear.
+Set `RESERVATION_DURATION=1m` on reservation-service to watch a reservation expire through the TTL queue.
+
 ## Develop one service
 
 ```bash

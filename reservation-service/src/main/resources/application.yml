@@ -18,9 +18,28 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # A failing message is retried a few times, then dropped (logged) instead of looping forever.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1s
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+smartparking:
+  parking-service:
+    url: ${PARKING_SERVICE_URL:http://localhost:8081}
+    connect-timeout: 2s
+    read-timeout: 3s
+  reservation:
+    # How long a reserved spot is held before it expires.
+    duration: ${RESERVATION_DURATION:15m}
+    # Reservations expire on time through a TTL queue; this sweep is only the fallback.
+    expiry-check: 1m

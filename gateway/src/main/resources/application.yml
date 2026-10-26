@@ -9,10 +9,11 @@ spring:
       server:
         webflux:
           routes:
+            # /api/v1/spots/** (reserve/occupy/release) is internal: only reservation-service calls it, directly.
             - id: parking-service
               uri: ${PARKING_SERVICE_URL:http://localhost:8081}
               predicates:
-                - Path=/api/v1/parking-locations/**,/api/v1/spots/**
+                - Path=/api/v1/parking-locations/**
             # Real-time spot status (WebSocket upgrade is proxied on the same route type)
             - id: parking-service-ws
               uri: ${PARKING_SERVICE_URL:http://localhost:8081}

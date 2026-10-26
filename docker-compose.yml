@@ -59,6 +59,7 @@ services:
     environment:
       <<: *service-env
       DB_NAME: reservation_db
+      PARKING_SERVICE_URL: http://parking-service:8081
     ports:
       - "8082:8082"
     depends_on: *service-deps

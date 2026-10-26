@@ -18,9 +18,24 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # A failing message is retried a few times, then dropped (logged) instead of looping forever.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1s
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+smartparking:
+  payment:
+    # Share of simulated payments that fail, to demo payment.failed (0 = never, 1 = always).
+    failure-rate: ${PAYMENT_FAILURE_RATE:0.2}
+    # Used for every session: there are no driver accounts with a saved method.
+    default-method: CARD

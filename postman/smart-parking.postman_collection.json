@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Smart Parking",
-    "description": "All requests go through the gateway ({{baseUrl}}). One folder per service/feature.",
+    "description": "All requests go through the gateway ({{baseUrl}}). One folder per service/feature; run top to bottom, IDs are chained through the environment.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -12,14 +12,23 @@
           "name": "Health check",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh driver per run, so earlier runs or the frontend demo never block a reservation.",
+                  "pm.collectionVariables.set('driverId', 'postman-' + Date.now());",
+                  "pm.collectionVariables.set('otherDriverId', 'postman-other-' + Date.now());"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Gateway is up', () => {",
-                  "    pm.response.to.have.status(200);",
-                  "    pm.expect(pm.response.json().status).to.eql('UP');",
-                  "});"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Gateway is up', () => pm.expect(pm.response.json().status).to.eql('UP'));"
                 ]
               }
             }
@@ -31,10 +40,1002 @@
         }
       ]
     },
-    { "name": "Parking locations", "item": [] },
-    { "name": "Reservations", "item": [] },
-    { "name": "Parking sessions", "item": [] },
-    { "name": "Payments", "item": [] },
-    { "name": "Notifications", "item": [] }
+    {
+      "name": "Parking locations",
+      "item": [
+        {
+          "name": "Create location",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Starts with the default hourly rule', () => pm.expect(body.pricing.strategy).to.eql('HOURLY'));",
+                  "pm.test('Has no spots yet', () => pm.expect(body.totalSpots).to.eql(0));",
+                  "pm.environment.set('locationId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/parking-locations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Garage\",\n  \"address\": \"Strada Memorandumului 21\",\n  \"latitude\": 46.7701,\n  \"longitude\": 23.5878\n}"
+            }
+          }
+        },
+        {
+          "name": "List locations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Contains the new location', () => pm.expect(pm.response.json().map(l => l.id)).to.include(pm.environment.get('locationId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations"
+          }
+        },
+        {
+          "name": "Get location",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is the new location', () => pm.expect(pm.response.json().name).to.eql('Postman Garage'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}"
+          }
+        },
+        {
+          "name": "Update location",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Name changed', () => pm.expect(pm.response.json().name).to.eql('Postman Garage North'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Garage North\",\n  \"address\": \"Strada Memorandumului 21\",\n  \"latitude\": 46.7701,\n  \"longitude\": 23.5878\n}"
+            }
+          }
+        },
+        {
+          "name": "Set pricing rule (Strategy)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const pricing = pm.response.json().pricing;",
+                  "pm.test('Uses the tiered strategy', () => pm.expect(pricing.strategy).to.eql('TIERED'));",
+                  "pm.test('Keeps only the rates TIERED needs', () => pm.expect(pricing.hourlyRate).to.be.null);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/pricing-rule",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"TIERED\",\n  \"firstHourRate\": 8.0,\n  \"laterHourRate\": 4.0\n}"
+            }
+          }
+        },
+        {
+          "name": "Pricing rule missing a rate is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/pricing-rule",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"TIERED\",\n  \"firstHourRate\": 8.0\n}"
+            }
+          }
+        },
+        {
+          "name": "Add spots",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const spots = pm.response.json();",
+                  "pm.test('Three spots numbered A1-A3', () => pm.expect(spots.map(s => s.code)).to.eql(['A1', 'A2', 'A3']));",
+                  "pm.test('All free', () => spots.forEach(s => pm.expect(s.status).to.eql('AVAILABLE')));",
+                  "pm.environment.set('spotId', spots[0].id);",
+                  "pm.environment.set('spot2Id', spots[1].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"level\": 0,\n  \"zone\": \"A\",\n  \"count\": 3,\n  \"type\": \"STANDARD\",\n  \"evCharging\": false,\n  \"accessible\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "List spots",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Lists three spots', () => pm.expect(pm.response.json()).to.have.lengthOf(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots"
+          }
+        },
+        {
+          "name": "Close spot (State)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Spot is out of service', () => pm.expect(pm.response.json().status).to.eql('OUT_OF_SERVICE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots/{{spot2Id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"OUT_OF_SERVICE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Availability",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const counts = pm.response.json();",
+                  "pm.test('Two free, one closed', () => { pm.expect(counts.AVAILABLE).to.eql(2); pm.expect(counts.OUT_OF_SERVICE).to.eql(1); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/availability"
+          }
+        },
+        {
+          "name": "Reopen spot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Spot is available again', () => pm.expect(pm.response.json().status).to.eql('AVAILABLE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots/{{spot2Id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Unknown location is 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/00000000-0000-0000-0000-000000000000"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reservations",
+      "item": [
+        {
+          "name": "Reserve spot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Reservation is active', () => pm.expect(body.status).to.eql('ACTIVE'));",
+                  "pm.test('Holds the spot for 15 minutes', () => pm.expect(new Date(body.expiresAt) - new Date(body.createdAt)).to.eql(15 * 60 * 1000));",
+                  "pm.environment.set('reservationId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/reservations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"driverId\": \"{{driverId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Another driver cannot reserve the same spot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/reservations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"driverId\": \"{{otherDriverId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Spot shows as reserved",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const spot = pm.response.json().find(s => s.id === pm.environment.get('spotId'));",
+                  "pm.test('Reserved by this driver', () => { pm.expect(spot.status).to.eql('RESERVED'); pm.expect(spot.heldBy).to.eql(pm.collectionVariables.get('driverId')); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots"
+          }
+        },
+        {
+          "name": "Get reservation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Shows spot and location names', () => { pm.expect(pm.response.json().spotCode).to.eql('A1'); pm.expect(pm.response.json().locationName).to.eql('Postman Garage North'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}"
+          }
+        },
+        {
+          "name": "Current parking shows the reservation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has the reservation', () => pm.expect(pm.response.json().reservation.id).to.eql(pm.environment.get('reservationId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/reservations/current?driverId={{driverId}}"
+          }
+        },
+        {
+          "name": "Cancel reservation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}"
+          }
+        },
+        {
+          "name": "Cancelling twice is a conflict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}"
+          }
+        },
+        {
+          "name": "Spot freed by reservation.cancelled",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 300);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventually consistent: the change arrives through RabbitMQ, so retry for a few seconds.",
+                  "let ok = false;",
+                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (body.find(s => s.id === pm.environment.get('spotId')).status === 'AVAILABLE'); } catch (e) { ok = false; }",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (!ok && tries < 20) {",
+                  "    pm.collectionVariables.set('tries', tries + 1);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('tries', 0);",
+                  "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots"
+          }
+        },
+        {
+          "name": "Reserve spot again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('reservationId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/reservations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"driverId\": \"{{driverId}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Parking sessions",
+      "item": [
+        {
+          "name": "Someone else cannot park on the reserved spot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/parking-sessions",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"driverId\": \"{{otherDriverId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Start session on the reserved spot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Session is active', () => pm.expect(body.status).to.eql('ACTIVE'));",
+                  "pm.environment.set('sessionId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/parking-sessions",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"reservationId\": \"{{reservationId}}\",\n  \"driverId\": \"{{driverId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reservation is completed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Reservation was used', () => pm.expect(pm.response.json().status).to.eql('COMPLETED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}"
+          }
+        },
+        {
+          "name": "Current parking shows the running cost",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const session = pm.response.json().session;",
+                  "pm.test('Session is running', () => pm.expect(session.id).to.eql(pm.environment.get('sessionId')));",
+                  "pm.test('First started hour costs 8 lei (tiered)', () => pm.expect(session.cost).to.eql(8));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/reservations/current?driverId={{driverId}}"
+          }
+        },
+        {
+          "name": "End session (Facade)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Session is completed', () => pm.expect(body.status).to.eql('COMPLETED'));",
+                  "pm.test('Cost from the tiered strategy', () => pm.expect(body.cost).to.eql(8));",
+                  "pm.test('Payment follows asynchronously', () => pm.expect(body.paymentStatus).to.eql('PENDING'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/parking-sessions/{{sessionId}}/end"
+          }
+        },
+        {
+          "name": "Ending twice is a conflict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/parking-sessions/{{sessionId}}/end"
+          }
+        },
+        {
+          "name": "Spot freed by session.completed",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 300);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventually consistent: the change arrives through RabbitMQ, so retry for a few seconds.",
+                  "let ok = false;",
+                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (body.find(s => s.id === pm.environment.get('spotId')).status === 'AVAILABLE'); } catch (e) { ok = false; }",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (!ok && tries < 20) {",
+                  "    pm.collectionVariables.set('tries', tries + 1);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('tries', 0);",
+                  "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
+                  "    const spot = pm.response.json().find(s => s.id === pm.environment.get('spotId'));",
+                  "    pm.test('Held by nobody', () => pm.expect(spot.heldBy).to.be.null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots"
+          }
+        },
+        {
+          "name": "Get session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has entry and exit times', () => pm.expect(pm.response.json().endedAt).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-sessions/{{sessionId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Payment created by session.completed",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 300);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventually consistent: the change arrives through RabbitMQ, so retry for a few seconds.",
+                  "let ok = false;",
+                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (true); } catch (e) { ok = false; }",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (!ok && tries < 20) {",
+                  "    pm.collectionVariables.set('tries', tries + 1);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('tries', 0);",
+                  "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
+                  "    const payment = pm.response.json();",
+                  "    pm.test('Charged the session cost', () => pm.expect(payment.amount).to.eql(8));",
+                  "    pm.test('Went through or failed (simulated)', () => pm.expect(['COMPLETED', 'FAILED']).to.include(payment.status));",
+                  "    pm.environment.set('paymentId', payment.id);",
+                  "    pm.collectionVariables.set('paymentStatus', payment.status);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/payments?sessionId={{sessionId}}"
+          }
+        },
+        {
+          "name": "Retry payment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Only a failed payment can be retried; a completed one answers 409.",
+                  "if (pm.collectionVariables.get('paymentStatus') === 'FAILED') {",
+                  "    pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Counted as a second attempt', () => pm.expect(pm.response.json().attempts).to.eql(2));",
+                  "    pm.collectionVariables.set('paymentStatus', pm.response.json().status);",
+                  "} else {",
+                  "    pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}/retry"
+          }
+        },
+        {
+          "name": "Get payment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Belongs to this session', () => pm.expect(pm.response.json().sessionId).to.eql(pm.environment.get('sessionId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/payments/{{paymentId}}"
+          }
+        },
+        {
+          "name": "Receipt shows the payment result (payment.*)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 300);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventually consistent: the change arrives through RabbitMQ, so retry for a few seconds.",
+                  "let ok = false;",
+                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (body.paymentStatus === pm.collectionVariables.get('paymentStatus')); } catch (e) { ok = false; }",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (!ok && tries < 20) {",
+                  "    pm.collectionVariables.set('tries', tries + 1);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('tries', 0);",
+                  "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
+                  "    pm.test('Has the payment id', () => pm.expect(pm.response.json().paymentId).to.eql(pm.environment.get('paymentId')));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-sessions/{{sessionId}}"
+          }
+        },
+        {
+          "name": "Payment history",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has the payment', () => pm.expect(pm.response.json().map(p => p.id)).to.include(pm.environment.get('paymentId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/payments?driverId={{driverId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Notifications from the events",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 300);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventually consistent: the change arrives through RabbitMQ, so retry for a few seconds.",
+                  "let ok = false;",
+                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (['RESERVATION_CREATED', 'RESERVATION_CANCELLED', 'SESSION_COMPLETED'].every(k => body.some(n => n.kind === k)) && body.some(n => n.kind.startsWith('PAYMENT_'))); } catch (e) { ok = false; }",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (!ok && tries < 20) {",
+                  "    pm.collectionVariables.set('tries', tries + 1);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('tries', 0);",
+                  "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
+                  "    const kinds = pm.response.json().map(n => n.kind);",
+                  "    pm.test('Newest first', () => pm.expect(kinds[0]).to.match(/^PAYMENT_/));",
+                  "    pm.test('One per event, no duplicates', () => pm.expect(kinds.filter(k => k === 'SESSION_COMPLETED')).to.have.lengthOf(1));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/notifications?driverId={{driverId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cleanup",
+      "item": [
+        {
+          "name": "Delete location",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}"
+          }
+        },
+        {
+          "name": "Deleted location is gone",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "driverId",
+      "value": ""
+    },
+    {
+      "key": "otherDriverId",
+      "value": ""
+    },
+    {
+      "key": "paymentStatus",
+      "value": ""
+    },
+    {
+      "key": "tries",
+      "value": "0"
+    }
   ]
 }

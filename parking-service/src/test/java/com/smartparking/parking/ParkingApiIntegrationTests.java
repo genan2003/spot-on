@@ -1,0 +1,177 @@
+package com.smartparking.parking;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.jayway.jsonpath.JsonPath;
+import com.smartparking.parking.spot.domain.SpotStatus;
+import com.smartparking.parking.spot.event.SpotStatusChanged;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+
+/** The parking-service REST API end to end, against real PostgreSQL. */
+@Import(TestcontainersConfiguration.class)
+@SpringBootTest
+@AutoConfigureMockMvc
+class ParkingApiIntegrationTests {
+
+	@Autowired
+	private MockMvc mvc;
+
+	@MockitoSpyBean
+	private SimpMessagingTemplate messagingTemplate;
+
+	@Test
+	void adminSetsUpALocationWithSpotsAndPricing() throws Exception {
+		String locationId = createLocation("Central Garage");
+
+		mvc.perform(get("/api/v1/parking-locations/{id}", locationId))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.pricing.strategy").value("HOURLY"))
+			.andExpect(jsonPath("$.pricing.hourlyRate").value(5.0))
+			.andExpect(jsonPath("$.totalSpots").value(0));
+
+		addSpots(locationId, "A", 3);
+		send(post("/api/v1/parking-locations/{id}/spots", locationId), """
+				{"level":0,"zone":"A","count":2,"type":"LARGE","evCharging":true,"accessible":false}""")
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$[0].code").value("A4"))
+			.andExpect(jsonPath("$[1].code").value("A5"));
+
+		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
+				{"strategy":"TIERED","firstHourRate":8,"laterHourRate":4,"hourlyRate":99}""")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.pricing.strategy").value("TIERED"))
+			.andExpect(jsonPath("$.pricing.laterHourRate").value(4))
+			.andExpect(jsonPath("$.pricing.hourlyRate").doesNotExist())
+			.andExpect(jsonPath("$.totalSpots").value(5))
+			.andExpect(jsonPath("$.freeSpots").value(5));
+
+		mvc.perform(get("/api/v1/parking-locations/{id}/spots", locationId))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(5))
+			.andExpect(jsonPath("$[0].code").value("A1"))
+			.andExpect(jsonPath("$[0].status").value("AVAILABLE"));
+	}
+
+	@Test
+	void pricingRuleWithAMissingRateIsRejected() throws Exception {
+		String locationId = createLocation("Rate check");
+		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
+				{"strategy":"TIERED","firstHourRate":8}""")
+			.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void adminClosesAndReopensASpot() throws Exception {
+		String locationId = createLocation("Closing test");
+		String spotId = addSpots(locationId, "B", 2);
+
+		send(patch("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, spotId), "{\"status\":\"OUT_OF_SERVICE\"}")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("OUT_OF_SERVICE"));
+
+		mvc.perform(get("/api/v1/parking-locations/{id}/availability", locationId))
+			.andExpect(jsonPath("$.AVAILABLE").value(1))
+			.andExpect(jsonPath("$.OUT_OF_SERVICE").value(1))
+			.andExpect(jsonPath("$.OCCUPIED").value(0));
+
+		send(patch("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, spotId), "{\"status\":\"OCCUPIED\"}")
+			.andExpect(status().isBadRequest());
+		send(patch("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, spotId), "{\"status\":\"AVAILABLE\"}")
+			.andExpect(status().isOk());
+	}
+
+	@Test
+	void driverHoldsAreCheckedByTheSpotState() throws Exception {
+		String locationId = createLocation("Hold test");
+		String spotId = addSpots(locationId, "C", 1);
+		String reservation = UUID.randomUUID().toString();
+		String session = UUID.randomUUID().toString();
+
+		hold(spotId, "reserve", "driver-1", reservation)
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("RESERVED"))
+			.andExpect(jsonPath("$.locationName").value("Hold test"))
+			.andExpect(jsonPath("$.spotCode").value("C1"));
+		hold(spotId, "reserve", "driver-2", UUID.randomUUID().toString()).andExpect(status().isConflict());
+		hold(spotId, "occupy", "driver-2", UUID.randomUUID().toString())
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value("Spot C1 is reserved by another driver."));
+
+		hold(spotId, "occupy", "driver-1", session).andExpect(jsonPath("$.status").value("OCCUPIED"));
+		mvc.perform(delete("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isConflict());
+
+		// The session is the hold now: releasing the old reservation must not free the parked car.
+		release(spotId, reservation)
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value("Spot C1 is no longer held by that reservation or session."));
+		release(spotId, session).andExpect(jsonPath("$.status").value("AVAILABLE"));
+
+		// Observer: every committed change went through RabbitMQ to the STOMP topic.
+		verify(messagingTemplate, timeout(5000)).convertAndSend(eq("/topic/spot-status"),
+				argThat((Object e) -> e instanceof SpotStatusChanged c && c.status() == SpotStatus.OCCUPIED && "driver-1".equals(c.heldBy())));
+
+		mvc.perform(delete("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isNoContent());
+		mvc.perform(get("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void unknownSpotIs404() throws Exception {
+		hold("00000000-0000-0000-0000-000000000000", "reserve", "driver-1", UUID.randomUUID().toString())
+			.andExpect(status().isNotFound());
+	}
+
+	private String createLocation(String name) throws Exception {
+		String body = send(post("/api/v1/parking-locations"), """
+				{"name":"%s","address":"Strada Memorandumului 21","latitude":46.77,"longitude":23.59}""".formatted(name))
+			.andExpect(status().isCreated())
+			.andReturn().getResponse().getContentAsString();
+		String id = JsonPath.read(body, "$.id");
+		assertThat(id).isNotBlank();
+		return id;
+	}
+
+	/** Adds spots to a zone and returns the id of the first one. */
+	private String addSpots(String locationId, String zone, int count) throws Exception {
+		String body = send(post("/api/v1/parking-locations/{id}/spots", locationId), """
+				{"level":0,"zone":"%s","count":%d,"type":"STANDARD","evCharging":false,"accessible":false}""".formatted(zone, count))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.length()").value(count))
+			.andReturn().getResponse().getContentAsString();
+		return JsonPath.read(body, "$[0].id");
+	}
+
+	private ResultActions hold(String spotId, String action, String driverId, String holdId) throws Exception {
+		return send(post("/api/v1/spots/{spotId}/" + action, spotId), """
+				{"driverId":"%s","holdId":"%s"}""".formatted(driverId, holdId));
+	}
+
+	private ResultActions release(String spotId, String holdId) throws Exception {
+		return send(post("/api/v1/spots/{spotId}/release", spotId), "{\"holdId\":\"" + holdId + "\"}");
+	}
+
+	private ResultActions send(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request, String json) throws Exception {
+		return mvc.perform(request.contentType(MediaType.APPLICATION_JSON).content(json));
+	}
+
+}
