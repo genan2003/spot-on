@@ -52,7 +52,8 @@ Troubleshooting:
 - **Newman reports failures right after a restart:** the stack must be healthy first; `--wait` takes care
   of that, otherwise rerun once `docker compose ps` shows every service as healthy.
 
-Settings you may want to change for a demo (environment variables in `docker-compose.yml`):
+Settings you may want to change for a demo. Set them in the shell when starting, e.g.
+`PAYMENT_FAILURE_RATE=1 docker compose up -d payment-service` makes every payment fail:
 
 | Variable | Service | Default | Effect |
 |---|---|---|---|

@@ -43,6 +43,10 @@ export function useLiveSpotStatus() {
         queryClient.setQueryData<Spot[]>(keys.spots(event.locationId), (spots) =>
           spots?.map((s) => (s.id === event.spotId ? { ...s, status: event.status, heldBy: event.heldBy } : s)),
         )
+        // A refetch started before this change was committed (e.g. right after "Cancel reservation",
+        // while the release event was still on its way) would land afterwards and put the old status
+        // back. Invalidating cancels that request and loads the list again, now including this change.
+        queryClient.invalidateQueries({ queryKey: keys.spots(event.locationId) })
         queryClient.invalidateQueries({ queryKey: keys.locations })
       }),
     [queryClient],
