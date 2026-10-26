@@ -61,6 +61,6 @@ RS --> MQ : AMQP
 PayS --> MQ : AMQP
 NS --> MQ : AMQP
 
-Runner ..> Host : docker compose up -d --build
+Runner ..> Host : docker compose up -d --build --wait\nthen Newman smoke test
 
 @enduml

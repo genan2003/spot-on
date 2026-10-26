@@ -83,7 +83,7 @@ This is what Stage 2 builds (`docker-compose.yml`). Five deployables, each with 
 | Service | Owns | Synchronous API (via the gateway) | Publishes | Consumes |
 |---|---|---|---|---|
 | gateway | — | Routes `/api/v1/**`, `/ws` | — | — |
-| parking-service | `parking_db` | Locations, spots, pricing rules, availability; STOMP `/topic/spot-status` | `spot.status-changed` | `reservation.*`, `session.*` |
+| parking-service | `parking_db` | Locations, spots, pricing rules, availability; STOMP `/topic/spot-status` | `spot.status-changed` | `reservation.cancelled`, `reservation.expired`, `session.completed` |
 | reservation-service | `reservation_db` | Reservations, sessions | `reservation.*`, `session.started`, `session.completed` | `payment.*` |
 | payment-service | `payment_db` | Payments | `payment.completed`, `payment.failed` | `session.completed` |
 | notification-service | `notification_db` | Notifications | — | `reservation.*`, `session.completed`, `payment.*` |
@@ -106,30 +106,34 @@ Services talk in two ways:
 **Reserving a spot.**
 
 1. The gateway routes `POST /reservations` to reservation-service.
-2. reservation-service calls parking-service to reserve the spot. parking-service applies the
-   State pattern and its `@Version` check in `parking_db`, answers `409` if the spot isn't free,
-   and publishes `spot.status-changed`, which reaches open browsers over WebSocket.
+2. reservation-service calls parking-service to reserve the spot, naming the new reservation's id
+   as the spot's hold. parking-service applies the State pattern and its `@Version` check in
+   `parking_db`, answers `409` if the spot isn't free, and publishes `spot.status-changed`, which
+   reaches open browsers over WebSocket.
 3. reservation-service saves the reservation in `reservation_db` (unique index on active
    reservations per spot). The two databases can't share a transaction, so if this save fails,
    reservation-service calls parking-service again to release the spot (a compensating action).
 4. reservation-service publishes `reservation.created` and answers `201`. notification-service
-   notifies the driver. parking-service treats its hold as provisional until this event confirms
-   it, so a spot can't stay reserved forever if reservation-service crashes between steps 2 and 3.
+   notifies the driver. (If reservation-service crashed exactly between steps 2 and 3, the spot would
+   stay held without a reservation. The prototype accepts this rare case; a production system would
+   time out holds that no reservation confirms.)
 5. Expiry: each reservation also sends a message to a queue with a 15-minute TTL. When it
    expires, the dead-letter exchange delivers it to reservation-service, which expires the
    reservation if it is still active and publishes `reservation.expired`; parking-service frees
-   the spot and the driver is notified.
+   the spot (only if that reservation still holds it) and the driver is notified. A scheduled
+   sweep every minute catches any reservation whose timer message was lost.
 
 **Parking and paying.**
 
-1. Starting a session: reservation-service asks parking-service to occupy the spot (sync), saves
-   the session and publishes `session.started`.
+1. Starting a session: reservation-service asks parking-service to occupy the spot (sync; the
+   session becomes the spot's hold), saves the session and publishes `session.started`.
 2. Ending it: `ParkingSessionFacade` in reservation-service records the exit time, fetches the
    location's pricing rule from parking-service and computes the cost with the matching strategy,
-   then publishes `session.completed`.
-3. payment-service charges the driver with the processor from its factory and publishes
-   `payment.completed` or `payment.failed`. parking-service frees the spot, reservation-service
-   stores the payment result, and notification-service tells the driver.
+   then publishes `session.completed` and answers straight away.
+3. Three services react on their own: parking-service frees the spot; payment-service charges the
+   driver with the processor from its factory and publishes `payment.completed` or `payment.failed`;
+   notification-service tells the driver. reservation-service stores the payment result on the
+   session, and a failed payment can be retried from the receipt.
 
 Payment is the one step that moves out of the facade's transaction compared to the monolith:
 the session ends immediately and the payment follows a moment later.
@@ -277,7 +281,8 @@ confirmations.
 
 | Risk | Mitigation |
 |---|---|
-| Reserving spans two databases | Compensating release call if saving the reservation fails; parking-service releases a hold that `reservation.created` never confirms |
+| Reserving spans two databases | Compensating release call if saving the reservation fails (a crash between the two steps remains a known gap) |
+| Late or repeated release events | Each spot remembers the reservation or session holding it; an event naming an older hold changes nothing |
 | Duplicate or redelivered events | Consumers dedupe on `eventId` |
 | parking-service unavailable | `RestClient` timeouts; a clear `503` instead of a hanging request |
 | Lost messages while a consumer is down | Durable queues; events wait until the consumer restarts |
