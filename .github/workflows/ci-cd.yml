@@ -1,3 +1,11 @@
+# CI/CD for Spot On (exercise 9).
+#   CI, on every push and pull request to main (GitHub-hosted runners):
+#     1. build-and-test: ./mvnw verify per module (unit + Testcontainers integration tests)
+#     2. frontend:       lint and build the React app
+#     3. docker-images:  build every image from docker-compose.yml
+#   CD, on pushes to main (and the manual "Run workflow" button):
+#     4. deploy: rebuild and restart the stack on the team's self-hosted runner, wait until every
+#        service is healthy, then run the Postman collection against it as a smoke test.
 name: CI/CD
 
 on:
@@ -5,6 +13,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual run from the Actions tab, e.g. to redeploy for a demo.
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -27,6 +37,13 @@ jobs:
           cache-dependency-path: ${{ matrix.service }}/pom.xml
       # Testcontainers uses the Docker daemon that ubuntu-latest runners provide.
       - run: ./mvnw -B verify
+      - name: Keep test reports of a failed build
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.service }}
+          path: ${{ matrix.service }}/target/surefire-reports/
+          retention-days: 7
 
   frontend:
     name: Lint and build frontend
@@ -54,23 +71,27 @@ jobs:
       - run: docker compose build
 
   deploy:
-    name: Deploy to local Docker
+    name: Deploy to local Docker and smoke test
     needs: docker-images
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: self-hosted
+    # One deployment at a time; a newer push waits for the running one instead of racing it.
+    concurrency:
+      group: deploy-local-docker
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
-      - run: docker compose up -d --build
-      - name: Wait for the gateway to report healthy
-        run: |
-          for i in $(seq 1 60); do
-            curl -sf http://localhost:8080/actuator/health && exit 0
-            sleep 5
-          done
-          docker compose ps
-          exit 1
+      # The compose file names the project (smart-parking), so every run replaces the same stack.
+      # --wait returns once every container is healthy (health checks in docker-compose.yml).
+      - name: Deploy
+        run: docker compose up -d --build --wait --wait-timeout 300 --remove-orphans
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-      - name: Run Postman collection
-        run: npx --yes newman run postman/smart-parking.postman_collection.json -e postman/local.postman_environment.json
+      - name: Smoke test with the Postman collection
+        run: npx --yes newman@6 run postman/smart-parking.postman_collection.json -e postman/local.postman_environment.json
+      - name: Show the stack and recent logs
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail 80

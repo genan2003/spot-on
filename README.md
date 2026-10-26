@@ -1,5 +1,7 @@
 # Spot On — Smart Parking Management System
 
+[![CI/CD](https://github.com/genan2003/spot-on/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/genan2003/spot-on/actions/workflows/ci-cd.yml)
+
 Drivers find available parking spaces, reserve spots, start and end parking sessions, and pay.
 Administrators manage parking locations, spaces, prices, and availability.
 
@@ -122,6 +124,35 @@ npx newman run postman/smart-parking.postman_collection.json -e postman/local.po
 
 In the Postman app: import both files, select the "Smart Parking - local" environment and run the
 collection with the Collection Runner (run the folders in order; later requests use earlier IDs).
+
+## CI/CD (GitHub Actions)
+
+`.github/workflows/ci-cd.yml` runs on every push and pull request to `main`:
+
+| Job | Runs on | What it does |
+|---|---|---|
+| Build and test (one per module) | GitHub-hosted | `./mvnw verify` in each service, the gateway and the PoC: unit tests and Testcontainers integration tests against real PostgreSQL and RabbitMQ. A failed build keeps its test reports as an artifact. |
+| Lint and build frontend | GitHub-hosted | `npm ci`, `npm run lint`, `npm run build` |
+| Build Docker images | GitHub-hosted | `docker compose build`, once every module passed |
+| Deploy to local Docker and smoke test | the team's self-hosted runner | Only for `main` (push, or "Run workflow" in the Actions tab): `docker compose up -d --build --wait` replaces the running stack and waits until every service is healthy, then the Postman collection runs against it with Newman. On failure the job prints `docker compose ps` and the services' logs. |
+
+Pull requests run the first three jobs only, so nothing is deployed before review. Deployments run one at
+a time.
+
+### Setting up the self-hosted runner (once, on the machine that hosts the demo)
+
+1. Install Docker (with Compose v2) and make sure the runner's user can use it without `sudo`:
+   `sudo usermod -aG docker $USER`, then log out and in again.
+2. In the GitHub repository: Settings → Actions → Runners → New self-hosted runner → Linux. Run the
+   download and `./config.sh --url ... --token ...` commands shown there and keep the default labels
+   (the deploy job asks for `self-hosted`).
+3. Install it as a service so it keeps running after a reboot: `sudo ./svc.sh install` and `sudo ./svc.sh start`.
+   Settings → Actions → Runners should now show it as Idle.
+4. Keep ports 3000, 5432, 5672, 8080–8084 and 15672 free on that machine. A stack started by hand from this
+   repository is the same Compose project (`smart-parking`), so a deployment simply replaces it.
+
+Keep the repository private (or require approval for workflows from outside contributors): a
+self-hosted runner executes the workflow code it is given on your machine.
 
 ## Repository layout
 
