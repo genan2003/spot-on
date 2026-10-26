@@ -5,20 +5,32 @@ Administrators manage parking locations, spaces, prices, and availability.
 
 ## Prerequisites
 
-- Java 21 (Maven is not needed; each module ships the Maven wrapper `./mvnw`)
-- Docker with Docker Compose
-- Node.js 22 (for the frontend dev server and to run the Postman collection with Newman)
+- Docker with Docker Compose v2 (that is all you need to run the system)
+- Node.js 22, to run the Postman collection with Newman (and the frontend dev server)
+- Java 21, only to build or test a service outside Docker (Maven is not needed; each module ships `./mvnw`)
 
-## Run everything
+## Quick start
+
+From the repository root:
 
 ```bash
-docker compose up --build
+# 1. Build and start everything; returns once every service reports healthy (first build: a few minutes)
+docker compose up -d --build --wait
+
+# 2. Run the API tests through the gateway (all requests should pass)
+npx newman run postman/smart-parking.postman_collection.json -e postman/local.postman_environment.json
+
+# 3. Stop (add -v to also delete the databases and start from scratch next time)
+docker compose down
 ```
+
+Then open the driver app at http://localhost:3000 (admin dashboard at http://localhost:3000/admin).
+A new database has no car parks yet: create one in the admin dashboard (add a location, then its spots).
 
 | Component | URL |
 |---|---|
 | Frontend (driver app, admin dashboard at `/admin`) | http://localhost:3000 |
-| Gateway (single entry point) | http://localhost:8080 |
+| Gateway (single entry point, all `/api/v1/**` calls) | http://localhost:8080 |
 | parking-service | http://localhost:8081 |
 | reservation-service | http://localhost:8082 |
 | payment-service | http://localhost:8083 |
@@ -27,8 +39,16 @@ docker compose up --build
 | PostgreSQL | localhost:5432 (smartparking / smartparking) |
 
 Each service exposes Swagger UI at `/swagger-ui.html` and its health at `/actuator/health` on its own port.
+`docker compose ps` shows whether every container is healthy; `docker compose logs -f payment-service`
+follows one service's log (simulated payments are logged by payment-service, notifications by notification-service).
 
-Stop with `docker compose down`; add `-v` to also wipe the database.
+Troubleshooting:
+- **A port is already in use:** stop whatever uses ports 3000, 5432, 5672, 8080–8084 or 15672
+  (often a local PostgreSQL), or change the left side of the port mapping in `docker-compose.yml`.
+- **`--wait` fails or a service keeps restarting:** check `docker compose logs <service>`. If the database
+  was created by an older version of the project, start clean with `docker compose down -v`.
+- **Newman reports failures right after a restart:** the stack must be healthy first; `--wait` takes care
+  of that, otherwise rerun once `docker compose ps` shows every service as healthy.
 
 Settings you may want to change for a demo (environment variables in `docker-compose.yml`):
 
@@ -85,11 +105,23 @@ npm run build
 Demo data resets when the page reloads. Set it to `false` to use the real services through the gateway.
 The Docker image always uses the real services.
 
-## API tests
+## API tests (Postman)
+
+`postman/smart-parking.postman_collection.json` covers every public endpoint, one folder per service,
+in the order of a driver's day: an admin sets up a car park, a driver reserves, cancels, reserves again,
+parks, leaves and pays, then reads their notifications. Every request has test assertions; IDs are passed
+between requests through `postman/local.postman_environment.json` (`{{baseUrl}}` is the gateway).
+Each run uses a new driver id, so it can be repeated against the same database.
+
+Steps that happen through RabbitMQ (the spot being freed, the payment, notifications) are not instant:
+those requests repeat themselves for up to a few seconds until the event has been processed.
 
 ```bash
 npx newman run postman/smart-parking.postman_collection.json -e postman/local.postman_environment.json
 ```
+
+In the Postman app: import both files, select the "Smart Parking - local" environment and run the
+collection with the Collection Runner (run the folders in order; later requests use earlier IDs).
 
 ## Repository layout
 

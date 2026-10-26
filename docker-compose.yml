@@ -11,6 +11,14 @@ x-service-env: &service-env
   RABBITMQ_USER: guest
   RABBITMQ_PASSWORD: guest
 
+# Healthy once Spring Boot answers /actuator/health with UP. `docker compose up --wait` waits for this,
+# so scripts (README, CI smoke test) can call the API as soon as the command returns.
+x-healthcheck: &healthcheck
+  interval: 5s
+  timeout: 3s
+  retries: 12
+  start_period: 30s
+
 x-service-deps: &service-deps
   postgres:
     condition: service_healthy
@@ -53,6 +61,9 @@ services:
     ports:
       - "8081:8081"
     depends_on: *service-deps
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
 
   reservation-service:
     build: ./reservation-service
@@ -63,6 +74,9 @@ services:
     ports:
       - "8082:8082"
     depends_on: *service-deps
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
 
   payment-service:
     build: ./payment-service
@@ -72,6 +86,9 @@ services:
     ports:
       - "8083:8083"
     depends_on: *service-deps
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health"]
 
   notification-service:
     build: ./notification-service
@@ -81,6 +98,9 @@ services:
     ports:
       - "8084:8084"
     depends_on: *service-deps
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/actuator/health"]
 
   gateway:
     build: ./gateway
@@ -92,17 +112,25 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - parking-service
-      - reservation-service
-      - payment-service
-      - notification-service
+      parking-service:
+        condition: service_healthy
+      reservation-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
 
   frontend:
     build: ./frontend
     ports:
       - "3000:80"
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
 
 volumes:
   postgres-data:
