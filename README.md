@@ -170,7 +170,7 @@ collection with the Collection Runner (run the folders in order; later requests 
 | Build and test (one per module) | GitHub-hosted | `./mvnw verify` in each service, the gateway and the PoC: unit tests and Testcontainers integration tests against real PostgreSQL and RabbitMQ. A failed build keeps its test reports as an artifact. |
 | Lint and build frontend | GitHub-hosted | `npm ci`, `npm run lint`, `npm run build` |
 | Build Docker images | GitHub-hosted | `docker compose build` (all six images, the frontend's nginx image included), once every module and the frontend passed |
-| Deploy to local Docker and smoke test | the team's self-hosted runner | Only for `main` (push, or "Run workflow" in the Actions tab): `docker compose up -d --build --wait` replaces the running stack and waits until every service is healthy, then the Postman collection runs against it with Newman. Its report is kept as the run's `newman-report` artifact (HTML for reading, JUnit XML), also when the smoke test failed. On failure the job prints `docker compose ps` and the services' logs. |
+| Deploy to local Docker and smoke test | the team's self-hosted runner if the repository variable `DEPLOY_RUNNER` is `self-hosted`, otherwise GitHub-hosted | Only for `main` (push, or "Run workflow" in the Actions tab): `docker compose up -d --build --wait` replaces the running stack and waits until every service is healthy, then the Postman collection runs against it with Newman. Its report is kept as the run's `newman-report` artifact (HTML for reading, JUnit XML), also when the smoke test failed. On failure the job prints `docker compose ps` and the services' logs. |
 
 Pull requests run the first three jobs only, so nothing is deployed before review. Deployments run one at
 a time.
@@ -184,7 +184,11 @@ a time.
    (the deploy job asks for `self-hosted`).
 3. Install it as a service so it keeps running after a reboot: `sudo ./svc.sh install` and `sudo ./svc.sh start`.
    Settings → Actions → Runners should now show it as Idle.
-4. Keep ports 3000, 5432, 5672, 8080–8084 and 15672 free on that machine. A stack started by hand from this
+4. Settings → Secrets and variables → Actions → Variables → New repository variable: `DEPLOY_RUNNER` =
+   `self-hosted`. From then on the deploy job runs on this machine and its stack stays up. Without the variable
+   it runs on a GitHub-hosted runner instead: the same deployment and smoke test, on Docker that is thrown away
+   afterwards (a job waiting for a self-hosted runner that doesn't exist would stay queued forever).
+5. Keep ports 3000, 5432, 5672, 8080–8084 and 15672 free on that machine. A stack started by hand from this
    repository is the same Compose project (`smart-parking`), so a deployment simply replaces it.
 
 Keep the repository private (or require approval for workflows from outside contributors): a

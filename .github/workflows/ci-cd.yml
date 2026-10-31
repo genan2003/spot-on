@@ -4,9 +4,13 @@
 #     2. frontend:       lint and build the React app
 #     3. docker-images:  build every image from docker-compose.yml
 #   CD, on pushes to main (and the manual "Run workflow" button):
-#     4. deploy: rebuild and restart the stack on the team's self-hosted runner, wait until every
-#        service is healthy, then run the Postman collection against it as a smoke test. Its report
-#        (HTML for people, JUnit XML for tools) is kept as the "newman-report" artifact of the run.
+#     4. deploy: rebuild and restart the stack with Docker Compose, wait until every service is healthy,
+#        then run the Postman collection against it as a smoke test. Its report (HTML for people, JUnit XML
+#        for tools) is kept as the "newman-report" artifact of the run.
+#        Where it deploys is the repository variable DEPLOY_RUNNER (Settings → Secrets and variables →
+#        Actions → Variables): "self-hosted" deploys to the team machine, whose stack keeps running; without
+#        it the job uses a GitHub-hosted runner's local Docker, which is thrown away after the smoke test.
+#        A job asking for a self-hosted runner that isn't registered would wait in the queue forever.
 name: CI/CD
 
 on:
@@ -75,7 +79,7 @@ jobs:
     name: Deploy to local Docker and smoke test
     needs: docker-images
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: self-hosted
+    runs-on: ${{ vars.DEPLOY_RUNNER || 'ubuntu-latest' }}
     # One deployment at a time; a newer push waits for the running one instead of racing it.
     concurrency:
       group: deploy-local-docker

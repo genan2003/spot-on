@@ -74,8 +74,9 @@ notification services, Postman, CI/CD.
 1. `git pull`, then `docker compose up -d --build --wait` (builds every image; nothing to download on the day).
 2. `npx --yes -p newman@6 -p newman-reporter-htmlextra@1 newman --version` once, so Newman and the HTML
    reporter the pipeline uses are cached.
-3. Settings → Actions → Runners shows the self-hosted runner as Idle. Push a commit or use "Run workflow"
-   and check the whole pipeline is green.
+3. Settings → Actions → Runners shows the self-hosted runner as Idle, and the repository variable
+   `DEPLOY_RUNNER` is `self-hosted` (without it the deploy runs on GitHub's Docker, not this laptop). Push a
+   commit or use "Run workflow" and check the whole pipeline is green.
 4. Create the demo car park in the admin dashboard (http://localhost:3000/admin): "Central Garage",
    Strada Memorandumului 21, zone A with 6 spots, zone B with 4 EV-charging spots, tiered pricing 8 / 4 lei.
    Seeing it created is part of the admin story, so it can also be done live.
@@ -234,7 +235,7 @@ one wins and the other gets 409: "Someone else took A1 a moment ago. Pick anothe
 | Why a gateway? | One entry point for the frontend; it routes `/api/v1/**` and `/ws`, and keeps the internal spot endpoints unreachable from outside. | A |
 | Why no shared library for the events? | Every service is an independent Maven project and Docker build. Each consumer reads only the fields it needs into its own record. | C |
 | What does the pipeline actually test? | `./mvnw verify` per module: unit tests for every pattern and integration tests against real PostgreSQL and RabbitMQ (Testcontainers); frontend lint and build; image build; then deploy and a Newman smoke test against the running stack. | C |
-| Why a self-hosted runner? | The assignment asks for deployment to local Docker; the runner is the machine that hosts the stack. Pull requests never deploy. | C |
+| Why a self-hosted runner? | The assignment asks for deployment to local Docker; the runner is the machine that hosts the stack. The variable `DEPLOY_RUNNER` picks it; without one registered, the same job deploys to a GitHub-hosted runner's Docker instead of waiting forever. Pull requests never deploy. | C |
 | Where are the Stage 1 patterns now? | State in parking-service; Strategy and Facade in reservation-service; Factory in payment- and notification-service; Observer is RabbitMQ (plus in-process events before the commit). | All |
 
 ## Deliverables against the assignment (Project 3, exercises 7–9)
@@ -246,5 +247,5 @@ one wins and the other gets 409: "Someone else took A1 a moment ago. Pick anothe
 | 7: Postman collection covering all features | `postman/` (locations, spots, pricing, availability, reservations, sessions and cost, payments and retry, notifications) | Done; live spot updates, live notifications and expiry are shown in the UI, since Newman can't wait 15 minutes or keep a WebSocket or event stream open |
 | 7: Docker packaging, README with run instructions | Multi-stage Dockerfiles, `docker-compose.yml`, README "Quick start" (checked on a fresh copy) | Done |
 | 8: message queue between at least two services | RabbitMQ: 8 routing keys, 4 durable consumer queues, TTL + dead-letter expiry | Done |
-| 9: CI/CD that builds, tests and deploys to local Docker | `.github/workflows/ci-cd.yml` | Done in code; needs the self-hosted runner registered and one green run on `main` |
+| 9: CI/CD that builds, tests and deploys to local Docker | `.github/workflows/ci-cd.yml` | Deploys and smoke-tests on every push to `main` (GitHub-hosted Docker until `DEPLOY_RUNNER=self-hosted` is set; then on the team machine, whose stack stays up for the demo) |
 | Functionalities 1–5 (locations, availability, reservations, sessions, payments and notifications) | Services + frontend | All covered |
