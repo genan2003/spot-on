@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from './client'
 import { subscribeToNotifications, subscribeToSpotStatus } from './live'
-import type { CurrentParking, NewLocation, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
+import type { CurrentParking, History, NewLocation, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
 
 export const keys = {
   locations: ['locations'] as const,
@@ -10,6 +10,7 @@ export const keys = {
   spots: (locationId: string) => ['spots', locationId] as const,
   current: ['current-parking'] as const,
   notifications: ['notifications'] as const,
+  history: ['history'] as const,
 }
 
 export const useLocations = () => useQuery({ queryKey: keys.locations, queryFn: api.listLocations })
@@ -29,6 +30,25 @@ export const useCurrentParking = () =>
       const busy = data?.reservation || data?.session || data?.lastCompleted?.paymentStatus === 'PENDING'
       return busy ? 3000 : false
     },
+  })
+
+/**
+ * Past parking: sessions and reservations from reservation-service, payments from payment-service. Payment details
+ * only add the method and number of tries, so if payment-service can't answer the page still shows everything else.
+ * Polls while a payment is being processed (after "Try payment again").
+ */
+export const useHistory = () =>
+  useQuery({
+    queryKey: keys.history,
+    queryFn: async (): Promise<History> => {
+      const [reservations, sessions, payments] = await Promise.all([
+        api.listReservations(),
+        api.listSessions(),
+        api.listPayments().catch(() => []),
+      ])
+      return { reservations, sessions, payments }
+    },
+    refetchInterval: (query) => (query.state.data?.sessions.some((s) => s.paymentStatus === 'PENDING') ? 3000 : false),
   })
 
 /** Loaded once; new ones arrive live (useLiveNotifications), so no polling. */
@@ -106,6 +126,7 @@ function useParkingMutation<T, R>(fn: (input: T) => Promise<R>) {
       queryClient.invalidateQueries({ queryKey: ['spots'] })
       queryClient.invalidateQueries({ queryKey: keys.locations })
       queryClient.invalidateQueries({ queryKey: keys.notifications })
+      queryClient.invalidateQueries({ queryKey: keys.history })
     },
   })
 }

@@ -5,7 +5,8 @@
 #     3. docker-images:  build every image from docker-compose.yml
 #   CD, on pushes to main (and the manual "Run workflow" button):
 #     4. deploy: rebuild and restart the stack on the team's self-hosted runner, wait until every
-#        service is healthy, then run the Postman collection against it as a smoke test.
+#        service is healthy, then run the Postman collection against it as a smoke test. Its report
+#        (HTML for people, JUnit XML for tools) is kept as the "newman-report" artifact of the run.
 name: CI/CD
 
 on:
@@ -89,7 +90,21 @@ jobs:
         with:
           node-version: "22"
       - name: Smoke test with the Postman collection
-        run: npx --yes newman@6 run postman/smart-parking.postman_collection.json -e postman/local.postman_environment.json
+        run: >
+          npx --yes -p newman@6 -p newman-reporter-htmlextra@1
+          newman run postman/smart-parking.postman_collection.json -e postman/local.postman_environment.json
+          --reporters cli,htmlextra,junit
+          --reporter-htmlextra-export newman-report/report.html
+          --reporter-htmlextra-title "Spot On API smoke test"
+          --reporter-junit-export newman-report/junit.xml
+      # Kept whether the smoke test passed or failed: a failed run's report shows which request broke.
+      - name: Keep the Newman report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newman-report
+          path: newman-report/
+          retention-days: 14
       - name: Show the stack and recent logs
         if: failure()
         run: |

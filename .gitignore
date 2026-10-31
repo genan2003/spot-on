@@ -6,6 +6,7 @@ target/
 HELP.md
 node_modules/
 dist/
+newman-report/
 
 # IDE
 .idea/

@@ -19,6 +19,9 @@ export function MyParkingPage() {
       <QueryState query={current} loading="Loading your parking…">
         {(data) => <Current data={data} />}
       </QueryState>
+      <Link to="/history" className="mt-8 inline-flex min-h-11 items-center font-semibold text-sign hover:underline">
+        Your parking history
+      </Link>
     </div>
   )
 }

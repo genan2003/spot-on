@@ -16,6 +16,7 @@ import jakarta.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -121,6 +122,12 @@ public class ParkingSessionFacade {
 	public BigDecimal calculateCost(ParkingSession session, Instant until) {
 		PricingStrategy strategy = parkingClient.getLocation(session.getLocationId()).pricing().toStrategy(session.getBay());
 		return strategy.calculateCost(session.getStartedAt(), until);
+	}
+
+	/** The driver's last 50 sessions, newest first (history page). */
+	@Transactional(readOnly = true)
+	public List<ParkingSession> history(String driverId) {
+		return sessionRepository.findTop50ByDriverIdOrderByStartedAtDesc(driverId);
 	}
 
 	public ParkingSession find(UUID sessionId) {

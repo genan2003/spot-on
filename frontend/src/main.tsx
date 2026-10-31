@@ -9,6 +9,7 @@ import { EditLocationPage } from './admin/EditLocationPage'
 import { PricingPage } from './admin/PricingPage'
 import { NotFound } from './components/NotFound'
 import { DriverLayout } from './driver/DriverLayout'
+import { HistoryPage } from './driver/HistoryPage'
 import { LocationPage } from './driver/LocationPage'
 import { LocationsPage } from './driver/LocationsPage'
 import { MyParkingPage } from './driver/MyParkingPage'
@@ -27,6 +28,7 @@ const router = createBrowserRouter([
       { index: true, element: <LocationsPage /> },
       { path: 'locations/:id', element: <LocationPage /> },
       { path: 'parking', element: <MyParkingPage /> },
+      { path: 'history', element: <HistoryPage /> },
       { path: 'notifications', element: <NotificationsPage /> },
     ],
   },

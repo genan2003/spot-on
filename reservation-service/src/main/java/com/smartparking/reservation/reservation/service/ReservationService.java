@@ -235,6 +235,12 @@ public class ReservationService {
 		return overdue.size();
 	}
 
+	/** The driver's last 50 reservations, newest first (history page). */
+	@Transactional(readOnly = true)
+	public List<Reservation> history(String driverId) {
+		return reservationRepository.findTop50ByDriverIdOrderByCreatedAtDesc(driverId);
+	}
+
 	public Reservation find(UUID reservationId) {
 		return reservationRepository.findById(reservationId)
 			.orElseThrow(() -> new EntityNotFoundException("Reservation " + reservationId + " not found."));

@@ -14,6 +14,7 @@ import type {
   Notification,
   ParkingLocation,
   ParkingSession,
+  Payment,
   PricingRule,
   Reservation,
   Spot,
@@ -106,7 +107,63 @@ addLocation(
 
 const reservations: Reservation[] = []
 const sessions: ParkingSession[] = []
+const payments: Payment[] = []
 const notifications: Notification[] = []
+
+/** A few past visits of the demo driver, so the history page has something to show. */
+function seedHistory() {
+  const at = (daysAgo: number, hours: number, minutes: number) => {
+    const date = new Date()
+    date.setDate(date.getDate() - daysAgo)
+    date.setHours(hours, minutes, 0, 0)
+    return date.toISOString()
+  }
+  const spotIn = (locationId: string, code: string) => spots.find((s) => s.locationId === locationId && s.code === code)!
+  const stay = (locationId: string, code: string, startedAt: string, endedAt: string, attempts: number) => {
+    const spot = spotIn(locationId, code)
+    const location = findLocation(locationId)
+    const session: ParkingSession = {
+      id: crypto.randomUUID(),
+      spotId: spot.id,
+      spotCode: code,
+      locationId,
+      locationName: location.name,
+      status: 'COMPLETED',
+      startedAt,
+      endedAt,
+      cost: cost(location.pricing, new Date(startedAt), new Date(endedAt), spot),
+      paymentId: crypto.randomUUID(),
+      paymentStatus: 'COMPLETED',
+    }
+    sessions.push(session)
+    payments.unshift({
+      id: session.paymentId!,
+      sessionId: session.id,
+      driverId: DRIVER_ID,
+      amount: session.cost,
+      method: 'CARD',
+      status: 'COMPLETED',
+      attempts,
+      createdAt: endedAt,
+      processedAt: endedAt,
+    })
+  }
+  stay('marasti-park-ride', 'C4', at(3, 8, 15), at(3, 10, 5), 1)
+  stay('riverside-lot', 'B2', at(1, 9, 10), at(1, 11, 40), 2)
+  const held = spotIn('central-garage', 'A1')
+  reservations.push({
+    id: crypto.randomUUID(),
+    spotId: held.id,
+    spotCode: held.code,
+    locationId: held.locationId,
+    locationName: findLocation(held.locationId).name,
+    status: 'EXPIRED',
+    createdAt: at(1, 17, 50),
+    expiresAt: at(1, 18, 5),
+    extended: false,
+    endedAt: at(1, 18, 5),
+  })
+}
 const listeners = new Set<(event: SpotStatusChanged) => void>()
 
 function counted(location: ParkingLocation): ParkingLocation {
@@ -152,12 +209,29 @@ export function onMockNotification(listener: (notification: Notification) => voi
   return () => notificationListeners.delete(listener)
 }
 
+/** Like payment-service: one record per session, a retry adds an attempt to it. */
 function processPayment(session: ParkingSession) {
   session.paymentStatus = 'PENDING'
+  let payment = payments.find((p) => p.sessionId === session.id)
+  if (!payment) {
+    payment = {
+      id: session.paymentId!,
+      sessionId: session.id,
+      driverId: DRIVER_ID,
+      amount: session.cost,
+      method: 'CARD',
+      status: 'PENDING',
+      attempts: 0,
+      createdAt: new Date().toISOString(),
+    }
+    payments.unshift(payment)
+  }
+  const record = payment
   setTimeout(() => {
     // A free stay (within the grace period) has nothing to charge, so it can't fail.
     const failed = session.cost > 0 && random() < PAYMENT_FAILURE_RATE
     session.paymentStatus = failed ? 'FAILED' : 'COMPLETED'
+    Object.assign(record, { status: session.paymentStatus, attempts: record.attempts + 1, processedAt: new Date().toISOString() })
     if (failed) notify('PAYMENT_FAILED', `Payment of ${session.cost.toFixed(2)} lei for ${session.spotCode} failed. Try payment again from your receipt.`)
     else notify('PAYMENT_COMPLETED', `Paid ${session.cost.toFixed(2)} lei for parking at ${session.spotCode}, ${session.locationName}.`)
   }, 2500)
@@ -246,6 +320,8 @@ export function onMockSpotChange(listener: (event: SpotStatusChanged) => void): 
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
+
+seedHistory()
 
 export const mockApi: Api = {
   listLocations: () => delay(() => locations.map(counted)),
@@ -492,4 +568,7 @@ export const mockApi: Api = {
     }),
 
   listNotifications: () => delay(() => notifications),
+  listReservations: () => delay(() => [...reservations].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50)),
+  listSessions: () => delay(() => [...sessions].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 50)),
+  listPayments: () => delay(() => payments),
 }

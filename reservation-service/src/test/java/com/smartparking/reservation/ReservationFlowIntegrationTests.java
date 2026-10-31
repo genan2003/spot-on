@@ -277,6 +277,34 @@ class ReservationFlowIntegrationTests {
 		reserve(spot, driver).andExpect(status().isServiceUnavailable());
 	}
 
+	@Test
+	void historyListsTheDriversReservationsAndSessionsNewestFirst() throws Exception {
+		String cancelled = id(reserve(spot, driver).andExpect(status().isCreated()));
+		mvc.perform(delete("/api/v1/reservations/{id}", cancelled)).andExpect(status().isNoContent());
+		String used = id(reserve(spot, driver).andExpect(status().isCreated()));
+		String sessionId = id(json(post("/api/v1/parking-sessions"),
+				"{\"spotId\":\"%s\",\"reservationId\":\"%s\",\"driverId\":\"%s\"}".formatted(spot, used, driver))
+			.andExpect(status().isCreated()));
+		mvc.perform(post("/api/v1/parking-sessions/{id}/end", sessionId)).andExpect(status().isOk());
+
+		mvc.perform(get("/api/v1/reservations").param("driverId", driver))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(2))
+			.andExpect(jsonPath("$[0].id").value(used))
+			.andExpect(jsonPath("$[0].status").value("COMPLETED"))
+			.andExpect(jsonPath("$[1].id").value(cancelled))
+			.andExpect(jsonPath("$[1].status").value("CANCELLED"))
+			.andExpect(jsonPath("$[1].cancelReason").value("DRIVER"));
+		mvc.perform(get("/api/v1/parking-sessions").param("driverId", driver))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(1))
+			.andExpect(jsonPath("$[0].id").value(sessionId))
+			.andExpect(jsonPath("$[0].cost").value(6.0));
+
+		mvc.perform(get("/api/v1/reservations").param("driverId", "nobody-" + UUID.randomUUID()))
+			.andExpect(jsonPath("$.length()").value(0));
+	}
+
 	private ResultActions reserve(UUID spotId, String driverId) throws Exception {
 		return json(post("/api/v1/reservations"), "{\"spotId\":\"%s\",\"driverId\":\"%s\"}".formatted(spotId, driverId));
 	}

@@ -7,6 +7,7 @@ import type {
   Notification,
   ParkingLocation,
   ParkingSession,
+  Payment,
   PricingRule,
   Reservation,
   Spot,
@@ -80,6 +81,12 @@ export interface Api {
   endSession(id: string): Promise<ParkingSession>
   retryPayment(paymentId: string): Promise<void>
   listNotifications(): Promise<Notification[]>
+  /** The driver's last 50 reservations, newest first. */
+  listReservations(): Promise<Reservation[]>
+  /** The driver's last 50 sessions, newest first. */
+  listSessions(): Promise<ParkingSession[]>
+  /** The driver's payments, newest first. */
+  listPayments(): Promise<Payment[]>
 }
 
 const httpApi: Api = {
@@ -108,6 +115,9 @@ const httpApi: Api = {
   endSession: (id) => request(`/parking-sessions/${id}/end`, json('POST')),
   retryPayment: (paymentId) => request(`/payments/${paymentId}/retry`, json('POST')),
   listNotifications: () => request(`/notifications?driverId=${DRIVER_ID}`),
+  listReservations: () => request(`/reservations?driverId=${DRIVER_ID}`),
+  listSessions: () => request(`/parking-sessions?driverId=${DRIVER_ID}`),
+  listPayments: () => request(`/payments?driverId=${DRIVER_ID}`),
 }
 
 // The demo data module is only loaded when mocks are on, so it never ships to a real deployment.

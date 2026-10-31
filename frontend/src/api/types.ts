@@ -109,6 +109,26 @@ export interface ParkingSession {
  * never both: the last receipt, or a cancelled or expired reservation, whichever is newer (an unpaid
  * receipt always wins), and only for two hours.
  */
+/** payment-service's record of a session's payment; a retry updates the same record. */
+export interface Payment {
+  id: string
+  sessionId: string
+  driverId: string
+  amount: number
+  method: 'CARD' | 'WALLET'
+  status: PaymentStatus
+  /** Tries so far, including retries. */
+  attempts: number
+  createdAt: string
+  processedAt?: string
+}
+
+export interface History {
+  reservations: Reservation[]
+  sessions: ParkingSession[]
+  payments: Payment[]
+}
+
 export interface CurrentParking {
   reservation?: Reservation
   session?: ParkingSession

@@ -150,6 +150,10 @@ those requests repeat themselves for up to a few seconds until the event has bee
 
 ```bash
 npx newman run postman/smart-parking.postman_collection.json -e postman/local.postman_environment.json
+
+# The same run with the HTML report that CI keeps (open newman-report/report.html in a browser)
+npx -p newman@6 -p newman-reporter-htmlextra@1 newman run postman/smart-parking.postman_collection.json \
+  -e postman/local.postman_environment.json -r cli,htmlextra --reporter-htmlextra-export newman-report/report.html
 ```
 
 In the Postman app: import both files, select the "Smart Parking - local" environment and run the
@@ -163,8 +167,8 @@ collection with the Collection Runner (run the folders in order; later requests 
 |---|---|---|
 | Build and test (one per module) | GitHub-hosted | `./mvnw verify` in each service, the gateway and the PoC: unit tests and Testcontainers integration tests against real PostgreSQL and RabbitMQ. A failed build keeps its test reports as an artifact. |
 | Lint and build frontend | GitHub-hosted | `npm ci`, `npm run lint`, `npm run build` |
-| Build Docker images | GitHub-hosted | `docker compose build`, once every module passed |
-| Deploy to local Docker and smoke test | the team's self-hosted runner | Only for `main` (push, or "Run workflow" in the Actions tab): `docker compose up -d --build --wait` replaces the running stack and waits until every service is healthy, then the Postman collection runs against it with Newman. On failure the job prints `docker compose ps` and the services' logs. |
+| Build Docker images | GitHub-hosted | `docker compose build` (all six images, the frontend's nginx image included), once every module and the frontend passed |
+| Deploy to local Docker and smoke test | the team's self-hosted runner | Only for `main` (push, or "Run workflow" in the Actions tab): `docker compose up -d --build --wait` replaces the running stack and waits until every service is healthy, then the Postman collection runs against it with Newman. Its report is kept as the run's `newman-report` artifact (HTML for reading, JUnit XML), also when the smoke test failed. On failure the job prints `docker compose ps` and the services' logs. |
 
 Pull requests run the first three jobs only, so nothing is deployed before review. Deployments run one at
 a time.

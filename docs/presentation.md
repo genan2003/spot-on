@@ -66,13 +66,14 @@ notification services, Postman, CI/CD.
 | Message queue | RabbitMQ UI: queues per consumer; stop notification-service, reserve and cancel, messages wait in `notification.events`; start it, they are delivered | 8 | B | 3 min |
 | No double reservations | Two guards: spot state + `@Version` in parking-service, partial unique index in reservation-service; the two 10-thread concurrency tests | 7 | B | 2 min |
 | Failed payment (optional) | Payments forced to fail: receipt offers "Try payment again" | 7, 8 | C | 1 min |
-| CI/CD | Actions tab: the run started at the beginning of the talk; four jobs, deploy on the self-hosted runner, Newman smoke test | 9 | C | 3 min |
+| CI/CD | Actions tab: the run started at the beginning of the talk; four jobs, deploy on the self-hosted runner, Newman smoke test; open the `newman-report` artifact's report.html (every request and assertion) | 9 | C | 3 min |
 | Questions | | | All | — |
 
 ## Before the presentation (day before, on the demo laptop)
 
 1. `git pull`, then `docker compose up -d --build --wait` (builds every image; nothing to download on the day).
-2. `npx --yes newman@6 --version` once, so Newman is cached.
+2. `npx --yes -p newman@6 -p newman-reporter-htmlextra@1 newman --version` once, so Newman and the HTML
+   reporter the pipeline uses are cached.
 3. Settings → Actions → Runners shows the self-hosted runner as Idle. Push a commit or use "Run workflow"
    and check the whole pipeline is green.
 4. Create the demo car park in the admin dashboard (http://localhost:3000/admin): "Central Garage",
@@ -97,7 +98,8 @@ npx --yes newman@6 run postman/smart-parking.postman_collection.json -e postman/
 Driver journey in the browser: open "Central Garage", pick A1, "Reserve spot" (admin plan hatches A1
 at the same moment), "Cancel reservation" (A1 free again on both screens), reserve A2, "Start session",
 "End session". The receipt shows "Processing payment…" for a moment, then "Paid". Open the bell: reserved,
-cancelled, reserved, session ended, paid.
+cancelled, reserved, session ended, paid. Back on My parking, "Your parking history": the stay with its payment
+(sessions from reservation-service, payment method and tries from payment-service) and the cancelled hold.
 
 Message queue:
 
