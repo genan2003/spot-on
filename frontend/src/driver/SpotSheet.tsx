@@ -6,6 +6,7 @@ import { useCurrentParking, useLocation, useMoveReservation, useNow, useReserveS
 import type { Spot } from '../api/types'
 import { StatusLabel } from '../components/status'
 import { clock, describeSurcharge, levelName, spotTypeNames, timeOfDay } from '../lib/format'
+import { isOpenNow } from '../lib/hours'
 import { button } from '../lib/ui'
 import { ReservationActions } from './ReservationActions'
 import { StartSession } from './StartSession'
@@ -59,6 +60,7 @@ function SpotActions({ spot }: { spot: Spot }) {
   const reserve = useReserveSpot()
   const move = useMoveReservation()
   const now = useNow()
+  const location = useLocation(spot.locationId)
 
   const error = [reserve.error, move.error].find(Boolean)
   const errorText =
@@ -67,6 +69,8 @@ function SpotActions({ spot }: { spot: Spot }) {
       : error?.message
 
   const reservation = current.data?.reservation
+  // Reserving, moving here and parking need the car park to be open (parking-service refuses them otherwise).
+  const closed = location.data !== undefined && !isOpenNow(location.data, now)
   const session = current.data?.session
   const mine = spot.heldBy === DRIVER_ID
 
@@ -88,6 +92,12 @@ function SpotActions({ spot }: { spot: Spot }) {
     body = (
       <p>
         You’re parked here. <Link to="/parking" className="font-semibold text-sign hover:underline">Go to my parking</Link>
+      </p>
+    )
+  } else if (spot.status === 'AVAILABLE' && closed) {
+    body = (
+      <p className="max-w-prose">
+        {location.data!.name} is closed now. It opens at {location.data!.opensAt}; you can reserve or park from then.
       </p>
     )
   } else if (spot.status === 'AVAILABLE' && reservation) {

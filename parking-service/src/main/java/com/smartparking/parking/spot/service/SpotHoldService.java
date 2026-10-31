@@ -1,9 +1,13 @@
 package com.smartparking.parking.spot.service;
 
+import com.smartparking.parking.common.TimeConfig;
+import com.smartparking.parking.location.domain.ParkingLocation;
 import com.smartparking.parking.spot.domain.ParkingSpot;
 import com.smartparking.parking.spot.event.SpotStatusChanged;
 import com.smartparking.parking.spot.repository.ParkingSpotRepository;
 import jakarta.persistence.EntityNotFoundException;
+import java.time.Clock;
+import java.time.LocalTime;
 import java.util.UUID;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
@@ -25,15 +29,22 @@ public class SpotHoldService {
 
 	private final ParkingSpotRepository spotRepository;
 	private final ApplicationEventPublisher eventPublisher;
+	private final Clock clock;
 
 	@Transactional
 	public ParkingSpot reserve(UUID spotId, String driverId, UUID reservationId) {
-		return change(spotId, spot -> spot.reserve(driverId, reservationId));
+		return change(spotId, spot -> {
+			requireOpen(spot);
+			spot.reserve(driverId, reservationId);
+		});
 	}
 
 	@Transactional
 	public ParkingSpot occupy(UUID spotId, String driverId, UUID sessionId, String licencePlate) {
-		return change(spotId, spot -> spot.occupy(driverId, sessionId, licencePlate));
+		return change(spotId, spot -> {
+			requireOpen(spot);
+			spot.occupy(driverId, sessionId, licencePlate);
+		});
 	}
 
 	@Transactional
@@ -55,6 +66,17 @@ public class SpotHoldService {
 				return true;
 			})
 			.orElse(false);
+	}
+
+	/**
+	 * Reserving (and moving a reservation) and starting a session need the car park to be open now, in its local time.
+	 * Ending a session and releasing a spot never do: a car must always be able to leave. 409, like a taken spot.
+	 */
+	private void requireOpen(ParkingSpot spot) {
+		ParkingLocation location = spot.getLocation();
+		if (!location.isOpenAt(LocalTime.now(clock.withZone(TimeConfig.CAR_PARK_ZONE)))) {
+			throw new IllegalStateException("%s is closed now. It opens at %s.".formatted(location.getName(), location.getOpensAt()));
+		}
 	}
 
 	private ParkingSpot change(UUID spotId, Consumer<ParkingSpot> action) {

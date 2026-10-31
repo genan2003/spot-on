@@ -1932,6 +1932,145 @@
       ]
     },
     {
+      "name": "Opening hours",
+      "item": [
+        {
+          "name": "Opening hours need both times",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Problem detail', () => pm.expect(pm.response.json()).to.have.property('status', 400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Garage North\",\n  \"address\": \"Strada Memorandumului 21\",\n  \"latitude\": 46.7701,\n  \"longitude\": 23.5878,\n  \"opensAt\": \"07:00\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Close the car park for now (opens in two hours)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Hours in the car park's time (Bucharest) that start two hours from now: closed now, at any time of day.",
+                  "const now = new Date().toLocaleTimeString('en-GB', { timeZone: 'Europe/Bucharest', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });",
+                  "const [h, m] = now.split(':').map(Number);",
+                  "const at = (plus) => `${String((h + plus) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;",
+                  "pm.collectionVariables.set('opensAt', at(2));",
+                  "pm.collectionVariables.set('closesAt', at(3));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Hours saved as given', () => { pm.expect(pm.response.json().opensAt).to.eql(pm.collectionVariables.get('opensAt')); pm.expect(pm.response.json().closesAt).to.eql(pm.collectionVariables.get('closesAt')); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Garage North\",\n  \"address\": \"Strada Memorandumului 21\",\n  \"latitude\": 46.7701,\n  \"longitude\": 23.5878,\n  \"opensAt\": \"{{opensAt}}\",\n  \"closesAt\": \"{{closesAt}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reserving while the car park is closed is refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Says when it opens', () => pm.expect(pm.response.json().detail).to.eql(`Postman Garage North is closed now. It opens at ${pm.collectionVariables.get('opensAt')}.`));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/reservations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}-hours"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"driverId\": \"{{driverId}}-hours\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Open around the clock again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No hours: always open', () => pm.expect(pm.response.json().opensAt).to.be.null);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Garage North\",\n  \"address\": \"Strada Memorandumului 21\",\n  \"latitude\": 46.7701,\n  \"longitude\": 23.5878\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Cleanup",
       "item": [
         {

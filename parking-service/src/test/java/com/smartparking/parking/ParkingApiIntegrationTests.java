@@ -14,10 +14,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.smartparking.parking.common.TimeConfig;
 import com.smartparking.parking.messaging.MessagingConfig;
 import com.smartparking.parking.spot.domain.SpotStatus;
 import com.smartparking.parking.spot.event.SpotStatusChanged;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalTime;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.AmqpAdmin;
@@ -318,6 +320,50 @@ class ParkingApiIntegrationTests {
 
 		mvc.perform(delete("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isNoContent());
 		mvc.perform(get("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void aClosedCarParkRefusesReservationsAndNewSessionsButCarsCanLeave() throws Exception {
+		String locationId = createLocation("Hours test");
+		String spotId = addSpots(locationId, "D", 2);
+		String reservation = UUID.randomUUID().toString();
+		hold(spotId, "reserve", "driver-1", reservation).andExpect(status().isOk());
+
+		// Hours that start in two hours: closed now, whatever the time of day.
+		LocalTime now = LocalTime.now(TimeConfig.CAR_PARK_ZONE).withSecond(0).withNano(0);
+		setHours(locationId, now.plusHours(2), now.plusHours(3))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.opensAt").value(now.plusHours(2).toString()));
+		String other = JsonPath.read(mvc.perform(get("/api/v1/parking-locations/{id}/spots", locationId))
+			.andReturn().getResponse().getContentAsString(), "$[1].id");
+		hold(other, "reserve", "driver-2", UUID.randomUUID().toString())
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value("Hours test is closed now. It opens at %s.".formatted(now.plusHours(2))));
+		hold(other, "occupy", "driver-2", UUID.randomUUID().toString()).andExpect(status().isConflict());
+		// Ending a hold is always allowed: a car must be able to leave.
+		release(spotId, reservation).andExpect(jsonPath("$.status").value("AVAILABLE"));
+
+		// Open from an hour ago to an hour from now (past midnight if it has to be).
+		setHours(locationId, now.minusHours(1), now.plusHours(1)).andExpect(status().isOk());
+		hold(other, "reserve", "driver-2", UUID.randomUUID().toString()).andExpect(status().isOk());
+	}
+
+	@Test
+	void openingHoursNeedBothTimes() throws Exception {
+		String locationId = createLocation("Half hours");
+		send(put("/api/v1/parking-locations/{id}", locationId), """
+				{"name":"Half hours","address":"Strada 1","latitude":46.77,"longitude":23.59,"opensAt":"07:00"}""")
+			.andExpect(status().isBadRequest());
+		send(put("/api/v1/parking-locations/{id}", locationId), """
+				{"name":"Half hours","address":"Strada 1","latitude":46.77,"longitude":23.59,"opensAt":"07:00","closesAt":"07:00"}""")
+			.andExpect(status().isBadRequest());
+		mvc.perform(get("/api/v1/parking-locations/{id}", locationId)).andExpect(jsonPath("$.opensAt").doesNotExist());
+	}
+
+	private ResultActions setHours(String locationId, LocalTime opensAt, LocalTime closesAt) throws Exception {
+		return send(put("/api/v1/parking-locations/{id}", locationId), """
+				{"name":"Hours test","address":"Strada 1","latitude":46.77,"longitude":23.59,"opensAt":"%s","closesAt":"%s"}"""
+			.formatted(opensAt, closesAt));
 	}
 
 	@Test

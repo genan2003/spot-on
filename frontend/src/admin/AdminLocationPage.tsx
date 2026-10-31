@@ -4,6 +4,7 @@ import { useAddSpots, useDeleteSpot, useLocation, useSetSpotStatus, useSpots } f
 import type { Spot, SpotStatus, SpotType } from '../api/types'
 import { LevelPicker } from '../components/LevelPicker'
 import { Legend } from '../components/Legend'
+import { OpeningHours } from '../components/OpeningHours'
 import { Plate } from '../components/Plate'
 import { QueryState } from '../components/QueryState'
 import { SpotPlan } from '../components/SpotPlan'
@@ -35,6 +36,7 @@ export function AdminLocationPage() {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <span>{describePricing(loc.pricing)}</span>
+              <OpeningHours location={loc} />
               <Link to={`/admin/locations/${id}/pricing`} className={button.small}>
                 Edit pricing
               </Link>

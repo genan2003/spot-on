@@ -5,6 +5,7 @@
  * other drivers so the live spot plan has something to show.
  */
 import { timeOfDay } from '../lib/format'
+import { isOpenNow } from '../lib/hours'
 import { isPlausiblePlate, normalizePlate } from '../lib/plate'
 import { cost, normalizeRule } from '../lib/pricing'
 import type { Api } from './client'
@@ -121,8 +122,16 @@ addLocation(
   },
   [{ level: 0, zones: ['A', 'B', 'C', 'D'], perZone: 8 }],
 )
+// A park and ride closes at night; the others are open around the clock.
+Object.assign(findLocation('marasti-park-ride'), { opensAt: '06:00', closesAt: '23:00' })
 
 const reservations: Reservation[] = []
+
+/** Like parking-service's reserve/occupy: only while the car park is open (leaving is always allowed). */
+function requireOpen(spot: Spot) {
+  const location = findLocation(spot.locationId)
+  if (!isOpenNow(location)) throw new ApiError(409, `${location.name} is closed now. It opens at ${location.opensAt}.`)
+}
 const sessions: ParkingSession[] = []
 const payments: Payment[] = []
 // Like payment-service: a new driver pays by card and has 25 lei in the simulated wallet.
@@ -571,6 +580,7 @@ export const mockApi: Api = {
   reserveSpot: (spotId) =>
     delay(() => {
       const spot = findSpot(spotId)
+      requireOpen(spot)
       if (activeReservation() || activeSession()) {
         throw new ApiError(409, 'You already have a reservation or a session running.')
       }
@@ -601,6 +611,7 @@ export const mockApi: Api = {
       const reservation = changeableReservation(id)
       if (reservation.spotId === spotId) throw new ApiError(409, `Your reservation is already for ${reservation.spotCode}.`)
       const spot = findSpot(spotId)
+      requireOpen(spot)
       if (spot.status !== 'AVAILABLE') throw new ApiError(409, `${spot.code} is no longer free.`)
       const previous = findSpot(reservation.spotId)
       const location = findLocation(spot.locationId)
@@ -643,6 +654,7 @@ export const mockApi: Api = {
       const spot = findSpot(spotId)
       // Like reservation-service: a plausible plate is required, stored upper case with single spaces.
       if (!isPlausiblePlate(licencePlate)) throw new ApiError(400, 'Enter the plate as it is on the car, e.g. CJ 07 ABC.')
+      requireOpen(spot)
       const plate = normalizePlate(licencePlate)
       if (activeSession()) throw new ApiError(409, 'You already have a session running.')
       const ownReservation = reservations.find((r) => r.id === reservationId && r.status === 'ACTIVE' && r.spotId === spotId)

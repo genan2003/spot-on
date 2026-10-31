@@ -43,12 +43,14 @@ public class ParkingLocationController {
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public LocationResponse create(@Valid @RequestBody LocationRequest request) {
-		return mapper.toResponse(locationService.create(request.name(), request.address(), request.latitude(), request.longitude()));
+		return mapper.toResponse(locationService.create(request.name(), request.address(), request.latitude(), request.longitude(),
+				request.opensAt(), request.closesAt()));
 	}
 
 	@PutMapping("/{id}")
 	public LocationResponse update(@PathVariable UUID id, @Valid @RequestBody LocationRequest request) {
-		return mapper.toResponse(locationService.update(id, request.name(), request.address(), request.latitude(), request.longitude()));
+		return mapper.toResponse(locationService.update(id, request.name(), request.address(), request.latitude(),
+				request.longitude(), request.opensAt(), request.closesAt()));
 	}
 
 	@DeleteMapping("/{id}")

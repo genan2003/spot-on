@@ -4,6 +4,7 @@ import { useLocation, useSpots } from '../api/queries'
 import type { Spot, SpotType } from '../api/types'
 import { BackIcon } from '../components/icons'
 import { LevelPicker } from '../components/LevelPicker'
+import { OpeningHours } from '../components/OpeningHours'
 import { Legend } from '../components/Legend'
 import { QueryState } from '../components/QueryState'
 import { SpotPlan } from '../components/SpotPlan'
@@ -33,6 +34,9 @@ export function LocationPage() {
             <h1 className="text-2xl font-extrabold tracking-tight">{loc.name}</h1>
             <p className="text-ink-muted">{loc.address}</p>
             <p className="mt-1">{describePricing(loc.pricing)}</p>
+            <p>
+              <OpeningHours location={loc} />
+            </p>
           </div>
         )}
       </QueryState>

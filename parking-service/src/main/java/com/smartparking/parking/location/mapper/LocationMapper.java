@@ -22,6 +22,8 @@ public interface LocationMapper {
 	@Mapping(target = "latitude", source = "location.latitude")
 	@Mapping(target = "longitude", source = "location.longitude")
 	@Mapping(target = "pricing", source = "location.pricingRule")
+	@Mapping(target = "opensAt", source = "location.opensAt")
+	@Mapping(target = "closesAt", source = "location.closesAt")
 	LocationResponse toResponse(LocationSummary summary);
 
 	/** Written by hand: the band list is left out (null) unless the rule is tiered, like the unused rates. */

@@ -52,6 +52,10 @@ export interface ParkingLocation {
   totalSpots: number
   freeSpots: number
   pricing: PricingRule
+  /** "HH:mm" in the car park's time (Bucharest); both missing (null) when it is always open. */
+  opensAt?: string | null
+  /** Earlier than `opensAt` when it closes after midnight. */
+  closesAt?: string | null
 }
 
 export interface Spot {
@@ -237,6 +241,9 @@ export interface NewLocation {
   address: string
   latitude: number
   longitude: number
+  /** Both null: always open. */
+  opensAt: string | null
+  closesAt: string | null
 }
 
 export interface NewSpots {

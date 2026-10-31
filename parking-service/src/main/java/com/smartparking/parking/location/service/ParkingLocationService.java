@@ -10,6 +10,7 @@ import com.smartparking.parking.spot.repository.ParkingSpotRepository;
 import com.smartparking.parking.spot.repository.SpotCount;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.EnumMap;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,15 +43,19 @@ public class ParkingLocationService {
 	}
 
 	@Transactional
-	public LocationSummary create(String name, String address, double latitude, double longitude) {
-		ParkingLocation location = locationRepository.save(
-				new ParkingLocation(name, address, latitude, longitude, PricingRule.defaultRule()));
-		return new LocationSummary(location, 0, 0);
+	public LocationSummary create(String name, String address, double latitude, double longitude, LocalTime opensAt,
+			LocalTime closesAt) {
+		ParkingLocation location = new ParkingLocation(name, address, latitude, longitude, PricingRule.defaultRule());
+		location.changeOpeningHours(opensAt, closesAt);
+		return new LocationSummary(locationRepository.save(location), 0, 0);
 	}
 
 	@Transactional
-	public LocationSummary update(UUID id, String name, String address, double latitude, double longitude) {
-		find(id).update(name, address, latitude, longitude);
+	public LocationSummary update(UUID id, String name, String address, double latitude, double longitude,
+			LocalTime opensAt, LocalTime closesAt) {
+		ParkingLocation location = find(id);
+		location.update(name, address, latitude, longitude);
+		location.changeOpeningHours(opensAt, closesAt);
 		return get(id);
 	}
 

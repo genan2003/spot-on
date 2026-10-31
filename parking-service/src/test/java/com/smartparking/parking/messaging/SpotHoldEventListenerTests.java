@@ -106,7 +106,7 @@ class SpotHoldEventListenerTests {
 	}
 
 	private UUID newSpot() {
-		UUID location = locationService.create("Event garage", "Test street", 46.77, 23.59).location().getId();
+		UUID location = locationService.create("Event garage", "Test street", 46.77, 23.59, null, null).location().getId();
 		return spotService.addSpots(location, 0, "E", 1, SpotType.STANDARD, false, false).getFirst().getId();
 	}
 

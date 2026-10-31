@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router'
 import { useLocations } from '../api/queries'
 import type { ParkingLocation } from '../api/types'
 import { OccupancyBar } from '../components/OccupancyBar'
+import { OpeningHours } from '../components/OpeningHours'
 import { QueryState } from '../components/QueryState'
 import { describePricing } from '../lib/format'
 import { button, field } from '../lib/ui'
@@ -75,6 +76,7 @@ function LocationRow({ location }: { location: ParkingLocation }) {
           <OccupancyBar free={location.freeSpots} total={location.totalSpots} />
         </span>
         <span className="mt-1 block text-sm">{describePricing(location.pricing)}</span>
+        <OpeningHours location={location} className="block text-sm" />
       </Link>
     </li>
   )

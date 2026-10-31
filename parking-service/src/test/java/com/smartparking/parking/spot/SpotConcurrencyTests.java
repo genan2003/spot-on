@@ -48,7 +48,7 @@ class SpotConcurrencyTests {
 
 	@Test
 	void onlyOneOfManySimultaneousReservationsWins() throws Exception {
-		LocationSummary location = locationService.create("Race garage", "Test street 1", 46.77, 23.59);
+		LocationSummary location = locationService.create("Race garage", "Test street 1", 46.77, 23.59, null, null);
 		UUID spotId = spotService.addSpots(location.location().getId(), 0, "R", 1, SpotType.STANDARD, false, false)
 			.getFirst().getId();
 
