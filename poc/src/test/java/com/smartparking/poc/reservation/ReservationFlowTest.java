@@ -3,6 +3,7 @@ package com.smartparking.poc.reservation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.smartparking.poc.TestData;
+import com.smartparking.poc.location.ParkingLocationService;
 import com.smartparking.poc.notification.Notification;
 import com.smartparking.poc.notification.NotificationRepository;
 import com.smartparking.poc.spot.ParkingSpotRepository;
@@ -25,6 +26,7 @@ class ReservationFlowTest {
     @Autowired ReservationRepository reservationRepository;
     @Autowired NotificationRepository notificationRepository;
     @Autowired TestData testData;
+    @Autowired ParkingLocationService locationService;
 
     @Test
     void reservingNotifiesTheDriverThroughTheirChannel() {
@@ -61,6 +63,19 @@ class ReservationFlowTest {
 
         assertThat(spotRepository.findById(spot).orElseThrow().getStatus()).isEqualTo(SpotStatus.AVAILABLE);
         assertThat(messagesFor(driver)).anyMatch(m -> m.contains("cancelled"));
+    }
+
+    @Test
+    void closingAReservedSpotCancelsTheReservationAndTellsTheDriver() {
+        UUID driver = testData.driver();
+        UUID spot = testData.spot();
+        Reservation reservation = reservationService.reserve(driver, spot);
+
+        locationService.setOutOfService(spot, true);
+
+        assertThat(spotRepository.findById(spot).orElseThrow().getStatus()).isEqualTo(SpotStatus.OUT_OF_SERVICE);
+        assertThat(reservationRepository.findById(reservation.getId()).orElseThrow().getStatus()).isEqualTo(ReservationStatus.CANCELLED);
+        assertThat(messagesFor(driver)).anyMatch(m -> m.contains("was closed by the car park"));
     }
 
     private List<String> messagesFor(UUID driverId) {

@@ -331,6 +331,7 @@ class ReservationCancelledEvent {
   - driverId: UUID
   - spotId: UUID
   - spotCode: String
+  - spotClosed: boolean
 }
 class ReservationExpiredEvent {
   - reservationId: UUID
@@ -418,6 +419,8 @@ ParkingLocation "1" *-- "1" PricingRule : priced by
 ParkingLocationController --> ParkingLocationService
 ParkingLocationService --> ParkingLocationRepository
 ParkingLocationService --> ParkingSpotRepository
+ParkingLocationService --> ReservationRepository : cancels the reservation\nof a spot it closes
+ParkingLocationService --> ApplicationEventPublisher
 ParkingLocationRepository ..> ParkingLocation : stores
 
 ' Strategy
@@ -586,13 +589,15 @@ NState .. IllegalSpotStateTransitionException
 note as NObserver
 <b>Observer</b> (domain events)
 Subject: ApplicationEventPublisher
-Publishers: ReservationService, ParkingSessionFacade
+Publishers: ReservationService, ParkingSessionFacade,
+ParkingLocationService (closing a reserved spot)
 Events: DomainEvent and its six subclasses
 Observer: NotificationEventListener (@EventListener)
 In the microservices the subject is RabbitMQ (parking.events).
 end note
 NObserver .. ApplicationEventPublisher
 NObserver .. ReservationService
+NObserver .. ParkingLocationService
 NObserver .. ParkingSessionFacade
 NObserver .. DomainEvent
 NObserver .. ReservationCreatedEvent

@@ -26,6 +26,8 @@ public class MessagingConfig {
 
 	public static final String SPOT_STATUS_CHANGED = "spot.status-changed";
 
+	public static final String SPOT_CLOSED = "spot.closed";
+
 	/** JSON; each consumer reads the payload into its own record type, so no event classes are shared. */
 	@Bean
 	MessageConverter messageConverter() {

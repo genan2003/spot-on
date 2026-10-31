@@ -26,7 +26,7 @@ class SpotStateTest {
                 Arguments.of(SpotStatus.RESERVED, "reserve", NOT_ALLOWED),
                 Arguments.of(SpotStatus.RESERVED, "occupy", SpotStatus.OCCUPIED),
                 Arguments.of(SpotStatus.RESERVED, "release", SpotStatus.AVAILABLE),
-                Arguments.of(SpotStatus.RESERVED, "markOutOfService", NOT_ALLOWED),
+                Arguments.of(SpotStatus.RESERVED, "markOutOfService", SpotStatus.OUT_OF_SERVICE),
                 Arguments.of(SpotStatus.RESERVED, "returnToService", NOT_ALLOWED),
 
                 Arguments.of(SpotStatus.OCCUPIED, "reserve", NOT_ALLOWED),

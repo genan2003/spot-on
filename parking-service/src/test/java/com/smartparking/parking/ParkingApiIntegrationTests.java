@@ -14,10 +14,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.smartparking.parking.messaging.MessagingConfig;
 import com.smartparking.parking.spot.domain.SpotStatus;
 import com.smartparking.parking.spot.event.SpotStatusChanged;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.AmqpAdmin;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -39,6 +46,12 @@ class ParkingApiIntegrationTests {
 
 	@MockitoSpyBean
 	private SimpMessagingTemplate messagingTemplate;
+
+	@Autowired
+	private AmqpAdmin amqpAdmin;
+
+	@Autowired
+	private RabbitTemplate rabbitTemplate;
 
 	@Test
 	void adminSetsUpALocationWithSpotsAndPricing() throws Exception {
@@ -120,6 +133,45 @@ class ParkingApiIntegrationTests {
 		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
 				{"strategy":"HOURLY","hourlyRate":6,"surcharges":{"compact":0,"large":500,"motorcycle":0,"evCharging":0}}""")
 			.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void closingAReservedSpotAnnouncesItSoTheReservationIsCancelled() throws Exception {
+		String locationId = createLocation("Closing reserved");
+		String spotId = addSpots(locationId, "R", 1);
+		String reservation = UUID.randomUUID().toString();
+		hold(spotId, "reserve", "driver-7", reservation).andExpect(status().isOk());
+		// A queue of our own on the exchange, to read what parking-service announces.
+		Queue listener = amqpAdmin.declareQueue();
+		amqpAdmin.declareBinding(new Binding(listener.getName(), Binding.DestinationType.QUEUE, MessagingConfig.EXCHANGE,
+				MessagingConfig.SPOT_CLOSED, null));
+
+		send(patch("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, spotId), "{\"status\":\"OUT_OF_SERVICE\"}")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("OUT_OF_SERVICE"))
+			.andExpect(jsonPath("$.heldBy").doesNotExist());
+
+		// Read as plain JSON, the way reservation-service reads it into its own record.
+		Message message = rabbitTemplate.receive(listener.getName(), 10_000);
+		assertThat(message).isNotNull();
+		String closed = new String(message.getBody(), StandardCharsets.UTF_8);
+		assertThat((String) JsonPath.read(closed, "$.spotId")).isEqualTo(spotId);
+		assertThat((String) JsonPath.read(closed, "$.spotCode")).isEqualTo("R1");
+		assertThat((String) JsonPath.read(closed, "$.reservationId")).isEqualTo(reservation);
+		assertThat((String) JsonPath.read(closed, "$.driverId")).isEqualTo("driver-7");
+
+		// The reservation's own cancel event, arriving later, can't reopen the closed spot.
+		release(spotId, reservation).andExpect(status().isConflict());
+	}
+
+	@Test
+	void anOccupiedSpotCannotBeClosed() throws Exception {
+		String locationId = createLocation("Closing occupied");
+		String spotId = addSpots(locationId, "O", 1);
+		hold(spotId, "occupy", "driver-8", UUID.randomUUID().toString()).andExpect(status().isOk());
+
+		send(patch("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, spotId), "{\"status\":\"OUT_OF_SERVICE\"}")
+			.andExpect(status().isConflict());
 	}
 
 	@Test

@@ -81,6 +81,8 @@ export interface Reservation {
   expiresAt: string
   /** A reservation can be extended once. */
   extended: boolean
+  /** Set when cancelled: by the driver, or because an admin closed the spot. */
+  cancelReason?: 'DRIVER' | 'SPOT_CLOSED'
 }
 
 export type PaymentStatus = 'PENDING' | 'COMPLETED' | 'FAILED'

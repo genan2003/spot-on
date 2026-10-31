@@ -68,6 +68,17 @@ class DriverEventListenerTests {
 					"B2 is now held for you until 10:30.");
 	}
 
+	@Test
+	void aReservationCancelledBecauseTheSpotClosedSaysSo() {
+		String driver = "driver-" + UUID.randomUUID();
+		publish("reservation.cancelled", Map.of("eventId", UUID.randomUUID(), "driverId", driver, "spotCode", "A3",
+				"locationName", "Central Garage", "reason", "SPOT_CLOSED"));
+
+		await().atMost(Duration.ofSeconds(10)).until(() -> !notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver).isEmpty());
+		assertThat(notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver)).extracting(Notification::getMessage)
+			.containsExactly("A3 at Central Garage was closed by the car park, so your reservation was cancelled. Pick another free spot.");
+	}
+
 	private void publish(String routingKey, Map<String, Object> event) {
 		rabbitTemplate.convertAndSend(MessagingConfig.EXCHANGE, routingKey, event);
 	}

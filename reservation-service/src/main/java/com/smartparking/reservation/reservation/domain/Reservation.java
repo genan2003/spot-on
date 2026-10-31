@@ -44,6 +44,10 @@ public class Reservation {
 
 	private Instant expiresAt;
 
+	/** Set when the reservation is cancelled: by the driver, or because the spot was closed. */
+	@Enumerated(EnumType.STRING)
+	private CancelReason cancelReason;
+
 	/** A reservation can be extended once; then the driver has to start the session or let it go. */
 	private boolean extended;
 
@@ -109,8 +113,9 @@ public class Reservation {
 		}
 	}
 
-	public void cancel() {
+	public void cancel(CancelReason reason) {
 		finish(ReservationStatus.CANCELLED);
+		cancelReason = reason;
 	}
 
 	public void expire() {

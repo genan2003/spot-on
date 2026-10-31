@@ -71,7 +71,7 @@ public class ReservationService {
         reservation.cancel();
         reservation.getSpot().release();
         eventPublisher.publishEvent(new ReservationCancelledEvent(clock.instant(), reservationId,
-                reservation.getDriver().getId(), reservation.getSpot().getId(), reservation.getSpot().getCode()));
+                reservation.getDriver().getId(), reservation.getSpot().getId(), reservation.getSpot().getCode(), false));
     }
 
     /** Expires every active reservation whose hold time has passed and frees its spot. */

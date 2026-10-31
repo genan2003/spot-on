@@ -7,9 +7,10 @@ import java.util.UUID;
 /**
  * The fields notification-service reads from any reservation, session or payment event. Each event
  * fills only some of them (e.g. {@code cost} on session.completed, {@code amount} on payment.*,
- * {@code previousSpotCode} on reservation.changed when the reservation moved);
+ * {@code previousSpotCode} on reservation.changed when the reservation moved, {@code reason} on
+ * reservation.cancelled: DRIVER or SPOT_CLOSED);
  * the routing key says which event it is.
  */
 public record DriverEvent(UUID eventId, String driverId, String spotCode, String locationName, Instant expiresAt,
-		BigDecimal cost, BigDecimal amount, String previousSpotCode) {
+		BigDecimal cost, BigDecimal amount, String previousSpotCode, String reason) {
 }

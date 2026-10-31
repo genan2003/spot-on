@@ -62,7 +62,7 @@ Both errors, and an illegal spot transition, become `409 Conflict` with an RFC 7
 | Test | Covers |
 |---|---|
 | `pricing.PricingStrategyTest` | Every strategy, every decorator, the order `PricingRule.toStrategy()` wraps them in |
-| `spot.SpotStateTest` | All 20 cells of the state × action transition table |
+| `spot.SpotStateTest` | All 20 cells of the state × action transition table (a reserved spot can now be closed) |
 | `payment.PaymentProcessorFactoryTest`, `notification.NotificationChannelFactoryTest` | Factory output; simulated success and failure |
 | `session.ParkingSessionFacadeTest` | Facade orchestration with every subsystem mocked, including a failed payment |
 | `reservation.ReservationConcurrencyTest` | Parallel reservations for one spot: exactly one succeeds |

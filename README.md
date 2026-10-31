@@ -74,6 +74,7 @@ using the app:
 |---|---|---|
 | `parking.spot-holds` | parking-service | `reservation.cancelled`, `reservation.expired`, `reservation.changed` (a moved reservation), `session.completed` (frees the spot) |
 | `reservation.payment-results` | reservation-service | `payment.completed`, `payment.failed` (updates the receipt) |
+| `reservation.spot-closures` | reservation-service | `spot.closed` (an admin closed a reserved spot: cancels the reservation) |
 | `payment.session-completed` | payment-service | `session.completed` (charges the driver) |
 | `notification.events` | notification-service | reservation, session and payment events |
 | `reservation.expiry-delay` | — | one message per reservation (two if it was extended); when its TTL runs out it moves to `reservation.expiry` |

@@ -5,6 +5,7 @@ import com.smartparking.parking.location.service.ParkingLocationService;
 import com.smartparking.parking.spot.domain.ParkingSpot;
 import com.smartparking.parking.spot.domain.SpotStatus;
 import com.smartparking.parking.spot.domain.SpotType;
+import com.smartparking.parking.spot.event.SpotClosed;
 import com.smartparking.parking.spot.event.SpotStatusChanged;
 import com.smartparking.parking.spot.repository.ParkingSpotRepository;
 import jakarta.persistence.EntityNotFoundException;
@@ -51,6 +52,10 @@ public class SpotService {
 	public ParkingSpot setStatus(UUID locationId, UUID spotId, SpotStatus status) {
 		ParkingSpot spot = spotRepository.findByIdAndLocationId(spotId, locationId)
 			.orElseThrow(() -> new EntityNotFoundException("Spot " + spotId + " not found at this location."));
+		// Remember the reservation before closing: the State pattern drops the hold with the transition.
+		boolean wasReserved = spot.getStatus() == SpotStatus.RESERVED;
+		UUID reservationId = spot.getHoldId();
+		String driverId = spot.getHeldBy();
 		switch (status) {
 			case OUT_OF_SERVICE -> spot.markOutOfService();
 			case AVAILABLE -> spot.returnToService();
@@ -58,6 +63,9 @@ public class SpotService {
 					"Admins can only set a spot to AVAILABLE or OUT_OF_SERVICE; drivers reserve and occupy spots.");
 		}
 		eventPublisher.publishEvent(SpotStatusChanged.of(spot));
+		if (wasReserved && status == SpotStatus.OUT_OF_SERVICE) {
+			eventPublisher.publishEvent(SpotClosed.of(spot, reservationId, driverId));
+		}
 		return spot;
 	}
 

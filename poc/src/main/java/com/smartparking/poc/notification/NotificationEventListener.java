@@ -45,7 +45,9 @@ public class NotificationEventListener {
     @TransactionalEventListener
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onReservationCancelled(ReservationCancelledEvent event) {
-        notify(event.getDriverId(), "You cancelled your reservation for spot %s.".formatted(event.getSpotCode()));
+        notify(event.getDriverId(), event.isSpotClosed()
+                ? "Spot %s was closed by the car park, so your reservation was cancelled. Pick another free spot.".formatted(event.getSpotCode())
+                : "You cancelled your reservation for spot %s.".formatted(event.getSpotCode()));
     }
 
     @TransactionalEventListener

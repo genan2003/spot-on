@@ -1149,6 +1149,135 @@
       ]
     },
     {
+      "name": "Closing a reserved spot",
+      "item": [
+        {
+          "name": "Reserve spot 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('closedReservationId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/reservations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spot2Id}}\",\n  \"driverId\": \"{{driverId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin closes the reserved spot (State)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Out of service, no longer held', () => { pm.expect(pm.response.json().status).to.eql('OUT_OF_SERVICE'); pm.expect(pm.response.json().heldBy).to.be.oneOf([null, undefined]); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots/{{spot2Id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"OUT_OF_SERVICE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reservation cancelled by spot.closed",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 300);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventually consistent: the change arrives through RabbitMQ, so retry for a few seconds.",
+                  "let ok = false;",
+                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (body.status === 'CANCELLED' && body.cancelReason === 'SPOT_CLOSED'); } catch (e) { ok = false; }",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (!ok && tries < 20) {",
+                  "    pm.collectionVariables.set('tries', tries + 1);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('tries', 0);",
+                  "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/reservations/{{closedReservationId}}"
+          }
+        },
+        {
+          "name": "Reopen spot 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Spot is available again', () => pm.expect(pm.response.json().status).to.eql('AVAILABLE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots/{{spot2Id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Notifications",
       "item": [
         {
@@ -1179,7 +1308,7 @@
                   "    pm.collectionVariables.set('tries', 0);",
                   "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
                   "    const kinds = pm.response.json().map(n => n.kind);",
-                  "    pm.test('Newest first', () => pm.expect(kinds[0]).to.match(/^PAYMENT_/));",
+                  "    const times = pm.response.json().map(n => new Date(n.sentAt).getTime());\n    pm.test('Newest first', () => pm.expect(times).to.eql([...times].sort((a, b) => b - a)));",
                   "    pm.test('One per event, no duplicates', () => pm.expect(kinds.filter(k => k === 'SESSION_COMPLETED')).to.have.lengthOf(1));",
                   "}"
                 ]

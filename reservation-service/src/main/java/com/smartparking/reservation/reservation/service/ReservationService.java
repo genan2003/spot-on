@@ -6,6 +6,7 @@ import com.smartparking.reservation.event.ReservationCancelledEvent;
 import com.smartparking.reservation.event.ReservationChangedEvent;
 import com.smartparking.reservation.event.ReservationCreatedEvent;
 import com.smartparking.reservation.event.ReservationExpiredEvent;
+import com.smartparking.reservation.reservation.domain.CancelReason;
 import com.smartparking.reservation.reservation.domain.Reservation;
 import com.smartparking.reservation.reservation.domain.ReservationStatus;
 import com.smartparking.reservation.reservation.repository.ReservationRepository;
@@ -131,9 +132,25 @@ public class ReservationService {
 		if (!reservation.isActive()) {
 			throw new IllegalStateException("This reservation has already ended.");
 		}
-		reservation.cancel();
+		reservation.cancel(CancelReason.DRIVER);
 		reservationRepository.save(reservation);
 		eventPublisher.publishEvent(ReservationCancelledEvent.of(reservation, clock.instant()));
+	}
+
+	/**
+	 * An admin closed the spot this reservation held ({@code spot.closed}). Does nothing if the reservation
+	 * has ended or moved to another spot meanwhile: the event is about a hold that no longer exists.
+	 */
+	public boolean cancelBecauseSpotClosed(UUID reservationId, UUID spotId) {
+		return reservationRepository.findById(reservationId)
+			.filter(reservation -> reservation.isActive() && reservation.getSpotId().equals(spotId))
+			.map(reservation -> {
+				reservation.cancel(CancelReason.SPOT_CLOSED);
+				reservationRepository.save(reservation);
+				eventPublisher.publishEvent(ReservationCancelledEvent.of(reservation, clock.instant()));
+				return true;
+			})
+			.orElse(false);
 	}
 
 	/** Called when the reservation's expiry timer fires. Does nothing if it was used, cancelled or already expired. */

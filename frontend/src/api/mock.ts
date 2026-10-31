@@ -239,10 +239,21 @@ export const mockApi: Api = {
   setSpotStatus: (_locationId, spotId, status) =>
     delay(() => {
       const spot = findSpot(spotId)
-      if (status === 'OUT_OF_SERVICE' && spot.status !== 'AVAILABLE') {
-        throw new ApiError(409, `${spot.code} is ${spot.status === 'RESERVED' ? 'reserved' : 'occupied'}. Wait until it is free.`)
+      if (status === 'OUT_OF_SERVICE' && spot.status === 'OCCUPIED') {
+        throw new ApiError(409, `Spot ${spot.code} is occupied, so it can't be taken out of service.`)
       }
+      // Closing a reserved spot cancels its reservation (spot.closed → reservation-service).
+      const reservation = spot.status === 'RESERVED' ? reservations.find((r) => r.spotId === spot.id && r.status === 'ACTIVE') : undefined
       setStatus(spot, status)
+      if (reservation) {
+        reservation.status = 'CANCELLED'
+        reservation.cancelReason = 'SPOT_CLOSED'
+        const location = findLocation(spot.locationId)
+        notify(
+          'RESERVATION_CANCELLED',
+          `${spot.code} at ${location.name} was closed by the car park, so your reservation was cancelled. Pick another free spot.`,
+        )
+      }
       return spot
     }),
 
@@ -327,6 +338,7 @@ export const mockApi: Api = {
       const reservation = reservations.find((r) => r.id === id)
       if (!reservation || reservation.status !== 'ACTIVE') throw new ApiError(409, 'This reservation has already ended.')
       reservation.status = 'CANCELLED'
+      reservation.cancelReason = 'DRIVER'
       setStatus(findSpot(reservation.spotId), 'AVAILABLE')
       notify('RESERVATION_CANCELLED', `You cancelled your reservation for ${reservation.spotCode}.`)
     }),

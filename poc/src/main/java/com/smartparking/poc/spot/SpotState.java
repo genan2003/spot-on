@@ -8,7 +8,7 @@ package com.smartparking.poc.spot;
  * <pre>
  * from \ action    reserve   occupy    release    markOutOfService  returnToService
  * Available        Reserved  Occupied  -          OutOfService      -
- * Reserved         -         Occupied  Available  -                 -
+ * Reserved         -         Occupied  Available  OutOfService      -
  * Occupied         -         -         Available  -                 -
  * OutOfService     -         -         -          -                 Available
  * </pre>

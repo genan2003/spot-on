@@ -185,12 +185,15 @@ What may happen to it depends on that state:
 | From \ action | `reserve()` | `occupy()` | `release()` | `markOutOfService()` | `returnToService()` |
 |---|---|---|---|---|---|
 | Available | → Reserved | → Occupied | not allowed | → Out of service | not allowed |
-| Reserved | not allowed | → Occupied | → Available | not allowed | not allowed |
+| Reserved | not allowed | → Occupied | → Available | → Out of service | not allowed |
 | Occupied | not allowed | not allowed | → Available | not allowed | not allowed |
 | Out of service | not allowed | not allowed | not allowed | not allowed | → Available |
 
 `release()` covers a cancelled or expired reservation (Reserved → Available) and a car leaving
-(Occupied → Available). The most important rule in the project depends on this table:
+(Occupied → Available). An admin can close a reserved spot, since there is no car in it yet; the
+reservation holding it is cancelled and the driver is told (in the PoC in the same transaction, in the
+microservices through the `spot.closed` event). An occupied spot can't be closed.
+The most important rule in the project depends on this table:
 **a spot that is reserved or occupied must never be reserved again.**
 
 ### Solution

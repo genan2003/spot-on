@@ -28,6 +28,9 @@ public class MessagingConfig {
 
 	public static final String PAYMENT_RESULTS_QUEUE = "reservation.payment-results";
 
+	/** Spots an admin closed while one of our reservations held them. */
+	public static final String SPOT_CLOSURES_QUEUE = "reservation.spot-closures";
+
 	public static final String EXPIRY_DELAY_QUEUE = "reservation.expiry-delay";
 
 	public static final String EXPIRY_EXCHANGE = "reservation.expiry";
@@ -53,6 +56,12 @@ public class MessagingConfig {
 		return new Declarables(queue,
 				BindingBuilder.bind(queue).to(parkingEventsExchange).with("payment.completed"),
 				BindingBuilder.bind(queue).to(parkingEventsExchange).with("payment.failed"));
+	}
+
+	@Bean
+	Declarables spotClosuresQueue(TopicExchange parkingEventsExchange) {
+		Queue queue = QueueBuilder.durable(SPOT_CLOSURES_QUEUE).build();
+		return new Declarables(queue, BindingBuilder.bind(queue).to(parkingEventsExchange).with("spot.closed"));
 	}
 
 	@Bean

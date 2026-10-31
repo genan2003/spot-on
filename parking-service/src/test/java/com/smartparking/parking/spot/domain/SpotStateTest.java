@@ -30,7 +30,7 @@ class SpotStateTest {
 				Arguments.of(SpotStatus.RESERVED, "reserve", NOT_ALLOWED),
 				Arguments.of(SpotStatus.RESERVED, "occupy", SpotStatus.OCCUPIED),
 				Arguments.of(SpotStatus.RESERVED, "release", SpotStatus.AVAILABLE),
-				Arguments.of(SpotStatus.RESERVED, "markOutOfService", NOT_ALLOWED),
+				Arguments.of(SpotStatus.RESERVED, "markOutOfService", SpotStatus.OUT_OF_SERVICE),
 				Arguments.of(SpotStatus.RESERVED, "returnToService", NOT_ALLOWED),
 
 				Arguments.of(SpotStatus.OCCUPIED, "reserve", NOT_ALLOWED),
@@ -85,6 +85,17 @@ class SpotStateTest {
 		assertThatThrownBy(() -> spot.occupy("driver-2", UUID.randomUUID())).isInstanceOf(IllegalSpotStateTransitionException.class)
 			.hasMessageContaining("reserved by another driver");
 		assertThat(spot.getStatus()).isEqualTo(SpotStatus.RESERVED);
+	}
+
+	@Test
+	void closingAReservedSpotDropsItsHold() {
+		ParkingSpot spot = spotIn(SpotStatus.RESERVED);
+		spot.markOutOfService();
+		assertThat(spot.getHeldBy()).isNull();
+		assertThat(spot.isHeldBy(HOLD)).isFalse();
+		// The reservation's own release event arrives later and must not reopen the spot.
+		assertThatThrownBy(() -> spot.release(HOLD)).isInstanceOf(IllegalSpotStateTransitionException.class);
+		assertThat(spot.getStatus()).isEqualTo(SpotStatus.OUT_OF_SERVICE);
 	}
 
 	@Test

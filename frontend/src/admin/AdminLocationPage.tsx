@@ -108,8 +108,11 @@ function SpotPanel({ spot, onClose }: { spot: Spot; onClose: () => void }) {
     ['EV charging', spot.evCharging ? 'Yes' : 'No'],
     ['Accessible', spot.accessible ? 'Yes' : 'No'],
   ]
-  const canClose = spot.status === 'AVAILABLE'
+  // A reserved spot has no car in it yet, so it can be closed; its reservation is cancelled.
+  const canClose = spot.status === 'AVAILABLE' || spot.status === 'RESERVED'
   const canReopen = spot.status === 'OUT_OF_SERVICE'
+  const [confirming, setConfirming] = useState(false)
+  const close = () => setStatus.mutate({ spotId: spot.id, status: 'OUT_OF_SERVICE' }, { onSettled: () => setConfirming(false) })
 
   return (
     <section aria-labelledby="spot-panel-title" className="bg-surface p-4">
@@ -133,15 +136,31 @@ function SpotPanel({ spot, onClose }: { spot: Spot; onClose: () => void }) {
         ))}
       </dl>
       <div className="mt-4">
-        {canClose && (
+        {canClose && !confirming && (
           <button
             type="button"
             className={button.secondary}
             disabled={setStatus.isPending}
-            onClick={() => setStatus.mutate({ spotId: spot.id, status: 'OUT_OF_SERVICE' })}
+            onClick={() => (spot.status === 'RESERVED' ? setConfirming(true) : close())}
           >
             Mark out of service
           </button>
+        )}
+        {canClose && confirming && (
+          <div role="group" aria-labelledby="close-reserved-warning" className="border-l-4 border-reserved pl-3">
+            <p id="close-reserved-warning" className="max-w-prose text-sm">
+              A driver has reserved {spot.code}. Closing it cancels their reservation, and they get a notification to
+              pick another spot.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button type="button" className={button.primary} disabled={setStatus.isPending} onClick={close}>
+                {setStatus.isPending ? 'Closing spot…' : 'Close spot anyway'}
+              </button>
+              <button type="button" className={button.quiet} onClick={() => setConfirming(false)}>
+                Keep it open
+              </button>
+            </div>
+          </div>
         )}
         {canReopen && (
           <button
@@ -154,7 +173,7 @@ function SpotPanel({ spot, onClose }: { spot: Spot; onClose: () => void }) {
           </button>
         )}
         {!canClose && !canReopen && (
-          <p className="text-sm text-ink-muted">A driver is using this spot. You can mark it out of service once it’s free.</p>
+          <p className="text-sm text-ink-muted">A car is parked here. You can mark it out of service once it has left.</p>
         )}
         {setStatus.error && (
           <p role="alert" className="mt-3 border-l-4 border-occupied pl-3 text-sm font-semibold">

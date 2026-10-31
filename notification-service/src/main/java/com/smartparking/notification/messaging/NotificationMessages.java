@@ -23,7 +23,10 @@ final class NotificationMessages {
 			case RESERVATION_CHANGED -> e.previousSpotCode() != null
 					? "Your reservation moved from %s to %s. It is held until %s.".formatted(e.previousSpotCode(), e.spotCode(), TIME.format(e.expiresAt()))
 					: "%s is now held for you until %s.".formatted(e.spotCode(), TIME.format(e.expiresAt()));
-			case RESERVATION_CANCELLED -> "You cancelled your reservation for %s.".formatted(e.spotCode());
+			case RESERVATION_CANCELLED -> "SPOT_CLOSED".equals(e.reason())
+					? "%s at %s was closed by the car park, so your reservation was cancelled. Pick another free spot."
+						.formatted(e.spotCode(), e.locationName())
+					: "You cancelled your reservation for %s.".formatted(e.spotCode());
 			case RESERVATION_EXPIRED -> "Your reservation for %s expired, so the spot is free again.".formatted(e.spotCode());
 			case SESSION_COMPLETED -> "Your session at %s, %s ended. It cost %s.".formatted(e.spotCode(), e.locationName(), lei(e.cost()));
 			case PAYMENT_COMPLETED -> "Paid %s for your parking session.".formatted(lei(e.amount()));

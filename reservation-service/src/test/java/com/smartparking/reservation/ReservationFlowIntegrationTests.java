@@ -143,8 +143,28 @@ class ReservationFlowIntegrationTests {
 		// parking-service frees the spot from the event, not from a call.
 		events.await("reservation.cancelled", reservationId);
 		verify(parkingClient, never()).releaseSpotIfHeld(any(), any());
-		mvc.perform(get("/api/v1/reservations/{id}", reservationId)).andExpect(jsonPath("$.status").value("CANCELLED"));
+		mvc.perform(get("/api/v1/reservations/{id}", reservationId))
+			.andExpect(jsonPath("$.status").value("CANCELLED"))
+			.andExpect(jsonPath("$.cancelReason").value("DRIVER"));
 		mvc.perform(delete("/api/v1/reservations/{id}", reservationId)).andExpect(status().isConflict());
+	}
+
+	@Test
+	void aClosedSpotCancelsItsReservation() throws Exception {
+		String reservationId = id(reserve(spot, driver));
+		// A closure for another spot (e.g. one the reservation already moved away from) changes nothing.
+		rabbitTemplate.convertAndSend(MessagingConfig.EXCHANGE, "spot.closed",
+				Map.of("eventId", UUID.randomUUID(), "spotId", UUID.randomUUID(), "reservationId", reservationId));
+
+		rabbitTemplate.convertAndSend(MessagingConfig.EXCHANGE, "spot.closed",
+				Map.of("eventId", UUID.randomUUID(), "spotId", spot, "reservationId", reservationId, "spotCode", "A1"));
+
+		String cancelled = events.await("reservation.cancelled", reservationId);
+		assertThat(PublishedEvents.<String>read(cancelled, "$.reason")).isEqualTo("SPOT_CLOSED");
+		mvc.perform(get("/api/v1/reservations/{id}", reservationId))
+			.andExpect(jsonPath("$.status").value("CANCELLED"))
+			.andExpect(jsonPath("$.cancelReason").value("SPOT_CLOSED"));
+		current().andExpect(jsonPath("$.reservation").isEmpty());
 	}
 
 	@Test

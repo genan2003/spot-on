@@ -1,17 +1,24 @@
 package com.smartparking.poc.location;
 
+import com.smartparking.poc.event.ReservationCancelledEvent;
 import com.smartparking.poc.pricing.PricingRule;
+import com.smartparking.poc.reservation.Reservation;
+import com.smartparking.poc.reservation.ReservationRepository;
+import com.smartparking.poc.reservation.ReservationStatus;
 import com.smartparking.poc.spot.ParkingSpot;
 import com.smartparking.poc.spot.ParkingSpotRepository;
 import com.smartparking.poc.spot.SpotStatus;
 import com.smartparking.poc.spot.SpotType;
 import jakarta.persistence.EntityNotFoundException;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +29,9 @@ public class ParkingLocationService {
 
     private final ParkingLocationRepository locationRepository;
     private final ParkingSpotRepository spotRepository;
+    private final ReservationRepository reservationRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     @Transactional
     public ParkingLocation createLocation(String name, String address, double latitude, double longitude, PricingRule rule) {
@@ -56,7 +66,17 @@ public class ParkingLocationService {
         ParkingSpot spot = spotRepository.findById(spotId)
                 .orElseThrow(() -> new EntityNotFoundException("Spot " + spotId + " not found."));
         if (outOfService) {
+            // State: a reserved spot can be closed (there is no car in it yet); its reservation is cancelled
+            // in the same transaction and the driver is told (Observer). An occupied spot is still refused.
+            Optional<Reservation> reservation = spot.getStatus() == SpotStatus.RESERVED
+                    ? reservationRepository.findBySpotIdAndStatus(spotId, ReservationStatus.ACTIVE)
+                    : Optional.empty();
             spot.markOutOfService();
+            reservation.ifPresent(r -> {
+                r.cancel();
+                eventPublisher.publishEvent(new ReservationCancelledEvent(clock.instant(), r.getId(), r.getDriver().getId(),
+                        spotId, spot.getCode(), true));
+            });
         } else {
             spot.returnToService();
         }

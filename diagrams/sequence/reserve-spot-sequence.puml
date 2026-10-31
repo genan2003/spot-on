@@ -6,6 +6,7 @@ title Driver reserves a parking spot
 ' Factory (notification channels). Concurrency guard: optimistic locking on ParkingSpot.version
 ' plus the partial unique index on active reservations.
 ' Activations use explicit activate/deactivate so both branches of each alt stay balanced.
+' The last section shows the other way a reservation can end early: an admin closes its spot.
 
 autonumber
 skinparam shadowing false
@@ -17,6 +18,7 @@ skinparam note {
 }
 
 actor Driver
+actor Admin
 participant ParkingLocationController as LocCtrl
 participant ParkingLocationService as LocService
 participant ReservationController as ResCtrl
@@ -229,6 +231,72 @@ opt driver does not start a session within 15 minutes
   NotifRepo --> Listener
   deactivate NotifRepo
   deactivate Listener
+end
+
+== Admin closes the reserved spot ==
+
+opt admin takes the spot out of service before the driver arrives
+  Admin -> LocCtrl : PATCH /api/v1/parking-locations/{id}/spots/{spotId}\n{outOfService: true}
+  activate LocCtrl
+  LocCtrl -> LocService : setOutOfService(spotId, true)
+  activate LocService
+  LocService -> SpotRepo : findById(spotId)
+  activate SpotRepo
+  SpotRepo --> LocService : spot (RESERVED)
+  deactivate SpotRepo
+  LocService -> ResRepo : findBySpotIdAndStatus(spotId, ACTIVE)
+  activate ResRepo
+  ResRepo --> LocService : reservation
+  deactivate ResRepo
+  LocService -> Spot : markOutOfService()
+  activate Spot
+  Spot -> State : markOutOfService(spot)
+  activate State
+  State -> Spot : changeState(OutOfServiceState)
+  note right of State
+    <b>State</b>: ReservedState → OutOfServiceState.
+    Allowed because there is no car yet;
+    an occupied spot still throws.
+  end note
+  State --> Spot
+  deactivate State
+  Spot --> LocService
+  deactivate Spot
+  LocService -> Res : cancel()
+  activate Res
+  note right of Res : status = CANCELLED
+  Res --> LocService
+  deactivate Res
+  LocService -> Publisher : publishEvent(ReservationCancelledEvent(spotClosed = true))
+  activate Publisher
+  Publisher --> LocService
+  deactivate Publisher
+  LocService -> DB : commit
+  activate DB
+  DB --> LocService : ok
+  deactivate DB
+  LocService --> LocCtrl : spot
+  deactivate LocService
+  LocCtrl --> Admin : 200 OK (OUT_OF_SERVICE)
+  deactivate LocCtrl
+
+  Publisher -> Listener : onReservationCancelled(event)
+  activate Listener
+  Listener -> Channel : send(notification)
+  activate Channel
+  note right of Channel
+    "Spot B4 was closed by the car park, so your
+    reservation was cancelled. Pick another free spot."
+    (driver and channel looked up as above)
+  end note
+  Channel --> Listener
+  deactivate Channel
+  deactivate Listener
+  note over LocService, Listener
+    In the microservices, parking-service publishes <b>spot.closed</b>;
+    reservation-service cancels the reservation and publishes
+    reservation.cancelled (reason SPOT_CLOSED) for notification-service.
+  end note
 end
 
 @enduml
