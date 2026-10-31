@@ -72,8 +72,10 @@ public class ParkingSessionFacade {
 					reservation.complete(clock.instant());
 					reservationRepository.save(reservation);
 				}
-				return sessionRepository.saveAndFlush(new ParkingSession(sessionId, driverId, spotId, spot.spotCode(),
-						spot.locationId(), spot.locationName(), spot.bay(), reservation, clock.instant()));
+				ParkingSession started = sessionRepository.saveAndFlush(new ParkingSession(sessionId, driverId, spotId,
+						spot.spotCode(), spot.locationId(), spot.locationName(), spot.bay(), reservation, clock.instant()));
+				eventPublisher.publishEvent(SessionStartedEvent.of(started, clock.instant()));
+				return started;
 			});
 		}
 		catch (DataIntegrityViolationException | IllegalStateException ex) {
@@ -82,7 +84,6 @@ public class ParkingSessionFacade {
 			parkingClient.releaseSpotIfHeld(spotId, sessionId);
 			throw ex;
 		}
-		eventPublisher.publishEvent(SessionStartedEvent.of(session, clock.instant()));
 		return session;
 	}
 
@@ -96,12 +97,16 @@ public class ParkingSessionFacade {
 		Instant exitTime = clock.instant();
 
 		// 2. Strategy + Decorator: the location's pricing rule and its extras decide the cost.
+		//    (A call to parking-service, so it happens before the transaction starts.)
 		BigDecimal cost = calculateCost(session, exitTime);
-		session.end(exitTime, cost);
-		sessionRepository.save(session);
 
-		// 3. Observer: payment, spot release (State) and notification react to this event.
-		eventPublisher.publishEvent(SessionCompletedEvent.of(session, exitTime));
+		transactionTemplate.executeWithoutResult(tx -> {
+			session.end(exitTime, cost);
+			sessionRepository.save(session);
+			// 3. Observer: payment, spot release (State) and notification react to this event,
+			//    written to the outbox in the same transaction as the ended session.
+			eventPublisher.publishEvent(SessionCompletedEvent.of(session, exitTime));
+		});
 		log.info("Session {} ended at {}, cost {} lei", sessionId, session.getSpotCode(), cost);
 		return session;
 	}

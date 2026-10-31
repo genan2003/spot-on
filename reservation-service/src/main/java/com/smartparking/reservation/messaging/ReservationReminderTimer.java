@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
@@ -48,10 +49,16 @@ public class ReservationReminderTimer {
 	 */
 	public void schedule(UUID reservationId, Instant expiresAt) {
 		long ttl = Math.max(0, Duration.between(clock.instant(), expiresAt.minus(reservationService.reminderLead())).toMillis());
-		rabbitTemplate.convertAndSend("", MessagingConfig.REMINDER_DELAY_QUEUE, new ExpiryCheck(reservationId), message -> {
-			message.getMessageProperties().setExpiration(String.valueOf(ttl));
-			return message;
-		});
+		try {
+			rabbitTemplate.convertAndSend("", MessagingConfig.REMINDER_DELAY_QUEUE, new ExpiryCheck(reservationId), message -> {
+				message.getMessageProperties().setExpiration(String.valueOf(ttl));
+				return message;
+			});
+		}
+		catch (AmqpException ex) {
+			// The minute sweep sends the reminder instead.
+			log.warn("Couldn't start the reminder timer for reservation {}: {}", reservationId, ex.getMessage());
+		}
 	}
 
 	/**

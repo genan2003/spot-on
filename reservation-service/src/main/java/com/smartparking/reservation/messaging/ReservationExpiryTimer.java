@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
@@ -35,10 +36,16 @@ public class ReservationExpiryTimer {
 
 	private void schedule(UUID reservationId, Instant expiresAt) {
 		long ttl = Math.max(0, Duration.between(clock.instant(), expiresAt).toMillis());
-		rabbitTemplate.convertAndSend("", MessagingConfig.EXPIRY_DELAY_QUEUE, new ExpiryCheck(reservationId), message -> {
-			message.getMessageProperties().setExpiration(String.valueOf(ttl));
-			return message;
-		});
+		try {
+			rabbitTemplate.convertAndSend("", MessagingConfig.EXPIRY_DELAY_QUEUE, new ExpiryCheck(reservationId), message -> {
+				message.getMessageProperties().setExpiration(String.valueOf(ttl));
+				return message;
+			});
+		}
+		catch (AmqpException ex) {
+			// The reservation is saved; the minute sweep (ReservationExpirationScheduler) expires it instead.
+			log.warn("Couldn't start the expiry timer for reservation {}: {}", reservationId, ex.getMessage());
+		}
 	}
 
 	/**

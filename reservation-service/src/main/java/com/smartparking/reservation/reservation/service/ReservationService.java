@@ -25,12 +25,18 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Reserves, cancels and expires reservations. Reserving needs parking-service's answer now, so the
  * spot is held with a synchronous call. Everything after a change is announced as an event
  * (<b>Observer pattern: Publisher</b>): parking-service frees the spot and notification-service tells
  * the driver, without this class knowing either of them.
+ * <p>
+ * Every change and its event share one transaction: the event is written to the outbox table with the
+ * change ({@code OutboxWriter}) and sent to RabbitMQ after the commit ({@code OutboxRelay}). The calls to
+ * parking-service stay outside the transaction, so a slow call doesn't hold a database connection.
  */
 @Service
 public class ReservationService {
@@ -42,9 +48,10 @@ public class ReservationService {
 	private final Clock clock;
 	private final Duration reservationDuration;
 	private final Duration reminderLead;
+	private final TransactionTemplate transactionTemplate;
 
 	public ReservationService(ReservationRepository reservationRepository, ParkingSessionRepository sessionRepository,
-			ParkingClient parkingClient, ApplicationEventPublisher eventPublisher, Clock clock,
+			ParkingClient parkingClient, ApplicationEventPublisher eventPublisher, Clock clock, TransactionTemplate transactionTemplate,
 			@Value("${smartparking.reservation.duration}") Duration reservationDuration,
 			@Value("${smartparking.reservation.reminder-before}") Duration reminderBefore) {
 		this.reservationRepository = reservationRepository;
@@ -53,6 +60,7 @@ public class ReservationService {
 		this.eventPublisher = eventPublisher;
 		this.clock = clock;
 		this.reservationDuration = reservationDuration;
+		this.transactionTemplate = transactionTemplate;
 		// At most half the hold, so a short demo hold still gets its reminder.
 		Duration half = reservationDuration.dividedBy(2);
 		this.reminderLead = reminderBefore.compareTo(half) < 0 ? reminderBefore : half;
@@ -80,17 +88,19 @@ public class ReservationService {
 		HeldSpot spot = parkingClient.reserveSpot(spotId, driverId, reservationId);
 
 		Instant now = clock.instant();
-		Reservation reservation;
 		try {
-			reservation = reservationRepository.saveAndFlush(new Reservation(reservationId, driverId, spotId, spot.spotCode(),
-					spot.locationId(), spot.locationName(), now, now.plus(reservationDuration)));
+			// The row and its event (written to the outbox) commit together, or not at all.
+			return transactionTemplate.execute(tx -> {
+				Reservation reservation = reservationRepository.saveAndFlush(new Reservation(reservationId, driverId, spotId,
+						spot.spotCode(), spot.locationId(), spot.locationName(), now, now.plus(reservationDuration)));
+				eventPublisher.publishEvent(ReservationCreatedEvent.of(reservation, now));
+				return reservation;
+			});
 		}
 		catch (DataIntegrityViolationException ex) {
 			parkingClient.releaseSpotIfHeld(spotId, reservationId);
 			throw ex;
 		}
-		eventPublisher.publishEvent(ReservationCreatedEvent.of(reservation, now));
-		return reservation;
 	}
 
 	/**
@@ -114,20 +124,22 @@ public class ReservationService {
 		String previousSpotCode = reservation.getSpotCode();
 
 		HeldSpot spot = parkingClient.reserveSpot(newSpotId, reservation.getDriverId(), reservationId);
-		Reservation moved;
 		try {
-			reservation.moveTo(newSpotId, spot.spotCode(), spot.locationId(), spot.locationName(), now);
-			moved = reservationRepository.saveAndFlush(reservation);
+			return transactionTemplate.execute(tx -> {
+				reservation.moveTo(newSpotId, spot.spotCode(), spot.locationId(), spot.locationName(), now);
+				Reservation moved = reservationRepository.saveAndFlush(reservation);
+				eventPublisher.publishEvent(ReservationChangedEvent.moved(moved, previousSpotId, previousSpotCode, now));
+				return moved;
+			});
 		}
 		catch (DataIntegrityViolationException | ConcurrencyFailureException | IllegalStateException ex) {
 			parkingClient.releaseSpotIfHeld(newSpotId, reservationId);
 			throw ex;
 		}
-		eventPublisher.publishEvent(ReservationChangedEvent.moved(moved, previousSpotId, previousSpotCode, now));
-		return moved;
 	}
 
 	/** Holds the spot one more hold time (once). The expiry timer picks up the new time when its first check fires. */
+	@Transactional
 	public Reservation extend(UUID reservationId) {
 		Reservation reservation = find(reservationId);
 		Instant now = clock.instant();
@@ -138,6 +150,7 @@ public class ReservationService {
 	}
 
 	/** parking-service frees the spot when it receives {@code reservation.cancelled}. */
+	@Transactional
 	public void cancel(UUID reservationId) {
 		Reservation reservation = find(reservationId);
 		if (!reservation.isActive()) {
@@ -152,6 +165,7 @@ public class ReservationService {
 	 * An admin closed the spot this reservation held ({@code spot.closed}). Does nothing if the reservation
 	 * has ended or moved to another spot meanwhile: the event is about a hold that no longer exists.
 	 */
+	@Transactional
 	public boolean cancelBecauseSpotClosed(UUID reservationId, UUID spotId) {
 		return reservationRepository.findById(reservationId)
 			.filter(reservation -> reservation.isActive() && reservation.getSpotId().equals(spotId))
@@ -165,6 +179,7 @@ public class ReservationService {
 	}
 
 	/** Called when the reservation's expiry timer fires. Does nothing if it was used, cancelled or already expired. */
+	@Transactional
 	public boolean expireIfDue(UUID reservationId, Instant now) {
 		return reservationRepository.findById(reservationId)
 			.filter(reservation -> reservation.isOverdue(now))
@@ -179,6 +194,7 @@ public class ReservationService {
 	 * Called when the reminder timer fires: publishes {@code reservation.expiring} if the hold really ends
 	 * within {@code lead} and the driver wasn't reminded about this expiry time yet. Returns whether it did.
 	 */
+	@Transactional
 	public boolean remindIfDue(UUID reservationId, Instant now) {
 		return reservationRepository.findById(reservationId)
 			.filter(reservation -> reservation.needsReminder(now, reminderLead))
@@ -191,6 +207,7 @@ public class ReservationService {
 	 * within the lead and wasn't reminded yet, e.g. when its timer message is stuck behind older messages
 	 * with a longer TTL after the hold time was changed.
 	 */
+	@Transactional
 	public int remindDue(Instant now) {
 		List<Reservation> due = reservationRepository.findByStatusAndExpiresAtBefore(ReservationStatus.ACTIVE, now.plus(reminderLead))
 			.stream().filter(reservation -> reservation.needsReminder(now, reminderLead)).toList();
@@ -211,6 +228,7 @@ public class ReservationService {
 	}
 
 	/** Fallback sweep: expires every active reservation whose hold time has passed. */
+	@Transactional
 	public int expireOverdue(Instant now) {
 		List<Reservation> overdue = reservationRepository.findByStatusAndExpiresAtBefore(ReservationStatus.ACTIVE, now);
 		overdue.forEach(reservation -> expire(reservation, now));
