@@ -132,7 +132,7 @@ public class ReservationService {
 		if (!reservation.isActive()) {
 			throw new IllegalStateException("This reservation has already ended.");
 		}
-		reservation.cancel(CancelReason.DRIVER);
+		reservation.cancel(CancelReason.DRIVER, clock.instant());
 		reservationRepository.save(reservation);
 		eventPublisher.publishEvent(ReservationCancelledEvent.of(reservation, clock.instant()));
 	}
@@ -145,7 +145,7 @@ public class ReservationService {
 		return reservationRepository.findById(reservationId)
 			.filter(reservation -> reservation.isActive() && reservation.getSpotId().equals(spotId))
 			.map(reservation -> {
-				reservation.cancel(CancelReason.SPOT_CLOSED);
+				reservation.cancel(CancelReason.SPOT_CLOSED, clock.instant());
 				reservationRepository.save(reservation);
 				eventPublisher.publishEvent(ReservationCancelledEvent.of(reservation, clock.instant()));
 				return true;

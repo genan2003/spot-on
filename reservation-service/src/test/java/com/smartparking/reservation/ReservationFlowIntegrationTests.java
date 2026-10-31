@@ -147,6 +147,12 @@ class ReservationFlowIntegrationTests {
 			.andExpect(jsonPath("$.status").value("CANCELLED"))
 			.andExpect(jsonPath("$.cancelReason").value("DRIVER"));
 		mvc.perform(delete("/api/v1/reservations/{id}", reservationId)).andExpect(status().isConflict());
+		// "My parking" shows the cancelled reservation, not an older receipt.
+		current()
+			.andExpect(jsonPath("$.reservation").isEmpty())
+			.andExpect(jsonPath("$.lastEndedReservation.id").value(reservationId))
+			.andExpect(jsonPath("$.lastEndedReservation.endedAt").isNotEmpty())
+			.andExpect(jsonPath("$.lastCompleted").isEmpty());
 	}
 
 	@Test

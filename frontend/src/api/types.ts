@@ -83,6 +83,8 @@ export interface Reservation {
   extended: boolean
   /** Set when cancelled: by the driver, or because an admin closed the spot. */
   cancelReason?: 'DRIVER' | 'SPOT_CLOSED'
+  /** When it stopped holding the spot: cancelled, expired (= expiresAt) or used for a session. */
+  endedAt?: string
 }
 
 export type PaymentStatus = 'PENDING' | 'COMPLETED' | 'FAILED'
@@ -102,11 +104,16 @@ export interface ParkingSession {
   paymentStatus?: PaymentStatus
 }
 
-/** What the driver currently holds: at most one reservation or session, plus the last receipt. */
+/**
+ * What the driver currently holds: at most one reservation or session. Plus the last thing that ended,
+ * never both: the last receipt, or a cancelled or expired reservation, whichever is newer (an unpaid
+ * receipt always wins), and only for two hours.
+ */
 export interface CurrentParking {
   reservation?: Reservation
   session?: ParkingSession
   lastCompleted?: ParkingSession
+  lastEndedReservation?: Reservation
 }
 
 export interface Notification {

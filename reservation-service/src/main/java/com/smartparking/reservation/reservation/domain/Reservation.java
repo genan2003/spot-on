@@ -44,6 +44,12 @@ public class Reservation {
 
 	private Instant expiresAt;
 
+	/**
+	 * When the reservation stopped holding the spot: cancelled, expired (= {@link #expiresAt}) or used for a
+	 * session. "My parking" shows the newest ended reservation or session, so it needs this time.
+	 */
+	private Instant endedAt;
+
 	/** Set when the reservation is cancelled: by the driver, or because the spot was closed. */
 	@Enumerated(EnumType.STRING)
 	private CancelReason cancelReason;
@@ -113,25 +119,27 @@ public class Reservation {
 		}
 	}
 
-	public void cancel(CancelReason reason) {
-		finish(ReservationStatus.CANCELLED);
+	public void cancel(CancelReason reason, Instant now) {
+		finish(ReservationStatus.CANCELLED, now);
 		cancelReason = reason;
 	}
 
+	/** The hold ended at {@link #expiresAt}, however late the expiry check runs. */
 	public void expire() {
-		finish(ReservationStatus.EXPIRED);
+		finish(ReservationStatus.EXPIRED, expiresAt);
 	}
 
 	/** The driver started a session on the reserved spot. */
-	public void complete() {
-		finish(ReservationStatus.COMPLETED);
+	public void complete(Instant now) {
+		finish(ReservationStatus.COMPLETED, now);
 	}
 
-	private void finish(ReservationStatus newStatus) {
+	private void finish(ReservationStatus newStatus, Instant at) {
 		if (!isActive()) {
 			throw new IllegalStateException("This reservation has already ended (" + status.name().toLowerCase() + ").");
 		}
 		status = newStatus;
+		endedAt = at;
 	}
 
 }

@@ -157,6 +157,21 @@ function activeReservation(): Reservation | undefined {
   return reservations.find((r) => r.status === 'ACTIVE')
 }
 
+/** Same rules as reservation-service's CurrentParkingService. */
+function lastEnded(): Pick<CurrentParking, 'lastCompleted' | 'lastEndedReservation'> {
+  const lastCompleted = sessions.filter((s) => s.status === 'COMPLETED').at(-1)
+  const lastEndedReservation = reservations
+    .filter((r) => (r.status === 'CANCELLED' || r.status === 'EXPIRED') && r.endedAt)
+    .sort((a, b) => a.endedAt!.localeCompare(b.endedAt!))
+    .at(-1)
+  if (lastCompleted && lastCompleted.paymentStatus !== 'COMPLETED') return { lastCompleted }
+  const recent = (iso: string) => Date.now() - new Date(iso).getTime() < 2 * 60 * 60_000
+  const receiptIsNewer = lastCompleted && (!lastEndedReservation || lastCompleted.endedAt! > lastEndedReservation.endedAt!)
+  if (receiptIsNewer && recent(lastCompleted.endedAt!)) return { lastCompleted }
+  if (!receiptIsNewer && lastEndedReservation && recent(lastEndedReservation.endedAt!)) return { lastEndedReservation }
+  return {}
+}
+
 /** Only an active reservation whose hold time hasn't run out can be moved or extended. */
 function changeableReservation(id: string): Reservation {
   const reservation = reservations.find((r) => r.id === id)
@@ -175,6 +190,7 @@ setInterval(() => {
   for (const reservation of reservations) {
     if (reservation.status === 'ACTIVE' && new Date(reservation.expiresAt).getTime() <= now) {
       reservation.status = 'EXPIRED'
+      reservation.endedAt = reservation.expiresAt
       setStatus(findSpot(reservation.spotId), 'AVAILABLE')
       notify('RESERVATION_EXPIRED', `Your reservation for ${reservation.spotCode} expired, so the spot is free again.`)
     }
@@ -298,6 +314,7 @@ export const mockApi: Api = {
       if (reservation) {
         reservation.status = 'CANCELLED'
         reservation.cancelReason = 'SPOT_CLOSED'
+        reservation.endedAt = new Date().toISOString()
         const location = findLocation(spot.locationId)
         notify(
           'RESERVATION_CANCELLED',
@@ -335,11 +352,7 @@ export const mockApi: Api = {
         const location = findLocation(session.locationId)
         session.cost = cost(location.pricing, new Date(session.startedAt), new Date(), findSpot(session.spotId))
       }
-      return {
-        reservation: activeReservation(),
-        session,
-        lastCompleted: sessions.filter((s) => s.status === 'COMPLETED').at(-1),
-      }
+      return { reservation: activeReservation(), session, ...lastEnded() }
     }),
 
   reserveSpot: (spotId) =>
@@ -403,6 +416,7 @@ export const mockApi: Api = {
       if (!reservation || reservation.status !== 'ACTIVE') throw new ApiError(409, 'This reservation has already ended.')
       reservation.status = 'CANCELLED'
       reservation.cancelReason = 'DRIVER'
+      reservation.endedAt = new Date().toISOString()
       setStatus(findSpot(reservation.spotId), 'AVAILABLE')
       notify('RESERVATION_CANCELLED', `You cancelled your reservation for ${reservation.spotCode}.`)
     }),
@@ -413,7 +427,7 @@ export const mockApi: Api = {
       if (activeSession()) throw new ApiError(409, 'You already have a session running.')
       const ownReservation = reservations.find((r) => r.id === reservationId && r.status === 'ACTIVE' && r.spotId === spotId)
       if (spot.status !== 'AVAILABLE' && !ownReservation) throw new ApiError(409, `${spot.code} is no longer free.`)
-      if (ownReservation) ownReservation.status = 'COMPLETED'
+      if (ownReservation) Object.assign(ownReservation, { status: 'COMPLETED', endedAt: new Date().toISOString() })
       const location = findLocation(spot.locationId)
       const session: ParkingSession = {
         id: crypto.randomUUID(),

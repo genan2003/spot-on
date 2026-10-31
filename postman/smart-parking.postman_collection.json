@@ -697,6 +697,32 @@
           }
         },
         {
+          "name": "Current parking shows the cancelled reservation, not an old receipt",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Nothing running', () => { pm.expect(body.reservation).to.be.oneOf([null, undefined]); pm.expect(body.session).to.be.oneOf([null, undefined]); });",
+                  "pm.test('The cancelled reservation is the last thing that ended', () => {",
+                  "    pm.expect(body.lastEndedReservation.id).to.eql(pm.environment.get('reservationId'));",
+                  "    pm.expect(body.lastEndedReservation.status).to.eql('CANCELLED');",
+                  "    pm.expect(body.lastEndedReservation.cancelReason).to.eql('DRIVER');",
+                  "    pm.expect(body.lastCompleted).to.be.oneOf([null, undefined]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/reservations/current?driverId={{driverId}}"
+          }
+        },
+        {
           "name": "Reserve spot again",
           "event": [
             {
@@ -1354,6 +1380,35 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/reservations/{{closedReservationId}}"
+          }
+        },
+        {
+          "name": "Current parking shows the reservation the car park closed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "// An unpaid receipt always comes first (the simulated payment can fail); otherwise the newest ended thing.",
+                  "if (body.lastCompleted && body.lastCompleted.paymentStatus !== 'COMPLETED') {",
+                  "    pm.test('The unpaid receipt stays so the driver can pay', () => pm.expect(body.lastEndedReservation).to.be.oneOf([null, undefined]));",
+                  "} else {",
+                  "    pm.test('The closed spot\\'s reservation is newer than the receipt', () => {",
+                  "        pm.expect(body.lastEndedReservation.id).to.eql(pm.environment.get('closedReservationId'));",
+                  "        pm.expect(body.lastEndedReservation.cancelReason).to.eql('SPOT_CLOSED');",
+                  "        pm.expect(body.lastCompleted).to.be.oneOf([null, undefined]);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/reservations/current?driverId={{driverId}}"
           }
         },
         {

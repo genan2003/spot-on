@@ -2,11 +2,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Link } from 'react-router'
 import { keys, useCurrentParking, useEndSession, useNow, useRetryPayment } from '../api/queries'
-import type { ParkingSession, Reservation } from '../api/types'
+import type { CurrentParking, ParkingSession, Reservation } from '../api/types'
 import { CheckIcon } from '../components/icons'
 import { QueryState } from '../components/QueryState'
 import { StatusLabel, StatusMark } from '../components/status'
 import { clock, duration, lei, timeOfDay } from '../lib/format'
+import { dismiss, useDismissed } from '../lib/dismissed'
 import { button } from '../lib/ui'
 import { ErrorLine, ReservationActions } from './ReservationActions'
 
@@ -16,24 +17,58 @@ export function MyParkingPage() {
     <div className="px-4 pt-2">
       <h1 className="text-2xl font-extrabold tracking-tight">My parking</h1>
       <QueryState query={current} loading="Loading your parking…">
-        {(data) =>
-          data.reservation ? (
-            <ReservationPanel reservation={data.reservation} />
-          ) : data.session ? (
-            <SessionPanel session={data.session} />
-          ) : data.lastCompleted ? (
-            <Receipt session={data.lastCompleted} />
-          ) : (
-            <div className="py-8">
-              <p>You have no reservation or session running.</p>
-              <Link to="/" className={`${button.primary} mt-4`}>
-                Find a spot
-              </Link>
-            </div>
-          )
-        }
+        {(data) => <Current data={data} />}
       </QueryState>
     </div>
+  )
+}
+
+/**
+ * What runs now, or else the last thing that ended (the server picks the newer of the last receipt and the
+ * last cancelled or expired reservation). "Done" hides an ended reservation or a paid receipt.
+ */
+function Current({ data }: { data: CurrentParking }) {
+  const ended = data.lastCompleted ?? data.lastEndedReservation
+  const dismissed = useDismissed(ended?.id)
+  if (data.reservation) return <ReservationPanel reservation={data.reservation} />
+  if (data.session) return <SessionPanel session={data.session} />
+  if (data.lastCompleted && !dismissed) return <Receipt session={data.lastCompleted} />
+  if (data.lastEndedReservation && !dismissed) return <EndedReservation reservation={data.lastEndedReservation} />
+  return (
+    <div className="py-8">
+      <p>You have no reservation or session running.</p>
+      <Link to="/" className={`${button.primary} mt-4`}>
+        Find a spot
+      </Link>
+    </div>
+  )
+}
+
+/** A reservation that ended without parking: say so plainly, and that nothing was charged. */
+function EndedReservation({ reservation }: { reservation: Reservation }) {
+  const at = timeOfDay(reservation.endedAt ?? reservation.expiresAt)
+  const [title, text] =
+    reservation.status === 'EXPIRED'
+      ? ['Reservation expired', `Your hold on ${reservation.spotCode} at ${reservation.locationName} ended at ${at}.`]
+      : reservation.cancelReason === 'SPOT_CLOSED'
+        ? ['Reservation cancelled', `At ${at} ${reservation.locationName} closed ${reservation.spotCode}, so your reservation was cancelled.`]
+        : ['Reservation cancelled', `At ${at} you cancelled your reservation for ${reservation.spotCode} at ${reservation.locationName}.`]
+  return (
+    <section className="mt-6" aria-labelledby="ended-title">
+      <h2 id="ended-title" className="text-lg font-semibold">
+        {title}
+      </h2>
+      <p className="mt-2 max-w-prose">{text}</p>
+      <p className="mt-1 max-w-prose text-ink-muted">You were not charged.</p>
+      <div className="mt-6 flex flex-wrap items-center gap-4">
+        <Link to={`/locations/${reservation.locationId}`} className={button.primary}>
+          Find a spot here
+        </Link>
+        <button type="button" className={button.quiet} onClick={() => dismiss(reservation.id)}>
+          Done
+        </button>
+      </div>
+    </section>
   )
 }
 
@@ -143,9 +178,17 @@ function Receipt({ session }: { session: ParkingSession }) {
           </>
         )}
       </div>
-      <Link to="/" className={`${button.secondary} mt-8`}>
-        Find a spot
-      </Link>
+      <div className="mt-8 flex flex-wrap items-center gap-4">
+        <Link to="/" className={button.secondary}>
+          Find a spot
+        </Link>
+        {/* An unpaid receipt stays until it is paid. */}
+        {session.paymentStatus === 'COMPLETED' && (
+          <button type="button" className={button.quiet} onClick={() => dismiss(session.id)}>
+            Done
+          </button>
+        )}
+      </div>
     </section>
   )
 }

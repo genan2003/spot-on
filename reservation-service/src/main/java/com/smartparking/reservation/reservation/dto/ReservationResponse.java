@@ -7,5 +7,5 @@ import java.util.UUID;
 
 public record ReservationResponse(UUID id, UUID spotId, String spotCode, UUID locationId, String locationName,
 		ReservationStatus status, Instant createdAt, Instant expiresAt, boolean extended,
-		CancelReason cancelReason) {
+		CancelReason cancelReason, Instant endedAt) {
 }

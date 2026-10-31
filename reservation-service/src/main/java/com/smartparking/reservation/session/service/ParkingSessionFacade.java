@@ -69,7 +69,7 @@ public class ParkingSessionFacade {
 		try {
 			session = transactionTemplate.execute(tx -> {
 				if (reservation != null) {
-					reservation.complete();
+					reservation.complete(clock.instant());
 					reservationRepository.save(reservation);
 				}
 				return sessionRepository.saveAndFlush(new ParkingSession(sessionId, driverId, spotId, spot.spotCode(),
