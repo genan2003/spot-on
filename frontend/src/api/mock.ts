@@ -5,6 +5,7 @@
  * other drivers so the live spot plan has something to show.
  */
 import { timeOfDay } from '../lib/format'
+import { isPlausiblePlate, normalizePlate } from '../lib/plate'
 import { cost, normalizeRule } from '../lib/pricing'
 import type { Api } from './client'
 import { DRIVER_ID } from './driver'
@@ -34,6 +35,16 @@ let seed = 7
 const random = () => {
   seed = (seed * 16807) % 2147483647
   return (seed - 1) / 2147483646
+}
+
+// Plates of the other (made-up) drivers' cars, so occupied bays show one in the admin dashboard. Counted, not
+// drawn from random(), so adding them didn't change the seeded car park.
+let plates = 0
+function demoPlate(): string {
+  const n = plates++
+  const counties = ['CJ', 'B', 'BH', 'MS', 'AB', 'SB', 'BN']
+  const letter = (k: number) => String.fromCharCode(65 + ((n * 7 + k * 11) % 26))
+  return `${counties[n % counties.length]} ${String(10 + ((n * 37) % 90))} ${letter(1)}${letter(2)}${letter(3)}`
 }
 
 interface LevelPlan {
@@ -71,6 +82,7 @@ function addLocation(
           accessible: n === 2 && zone === zones[0],
           status,
           heldBy: status === 'RESERVED' || status === 'OCCUPIED' ? 'someone-else' : undefined,
+          licencePlate: status === 'OCCUPIED' ? demoPlate() : undefined,
         })
       }
     }
@@ -191,16 +203,17 @@ function findSpot(id: string): Spot {
   return spot
 }
 
-function setStatus(spot: Spot, status: SpotStatus, heldBy?: string) {
+function setStatus(spot: Spot, status: SpotStatus, heldBy?: string, licencePlate?: string) {
   spot.status = status
   spot.heldBy = heldBy
+  spot.licencePlate = licencePlate
   broadcast(spot)
 }
 
 /** Like spot.status-changed: the spot's live state goes to every subscriber. */
 function broadcast(spot: Spot) {
-  const { id: spotId, locationId, status, heldBy, type, evCharging, accessible } = spot
-  listeners.forEach((listener) => listener({ spotId, locationId, status, heldBy, type, evCharging, accessible }))
+  const { id: spotId, locationId, status, heldBy, licencePlate, type, evCharging, accessible } = spot
+  listeners.forEach((listener) => listener({ spotId, locationId, status, heldBy, licencePlate, type, evCharging, accessible }))
 }
 
 const notificationListeners = new Set<(notification: Notification) => void>()
@@ -323,7 +336,10 @@ setInterval(() => {
   const candidates = spots.filter((s) => s.heldBy !== DRIVER_ID && (s.status === 'AVAILABLE' || s.status === 'OCCUPIED'))
   const spot = candidates[Math.floor(random() * candidates.length)]
   if (!spot) return
-  if (spot.status === 'AVAILABLE') setStatus(spot, random() < 0.3 ? 'RESERVED' : 'OCCUPIED', 'someone-else')
+  if (spot.status === 'AVAILABLE') {
+    if (random() < 0.3) setStatus(spot, 'RESERVED', 'someone-else')
+    else setStatus(spot, 'OCCUPIED', 'someone-else', demoPlate())
+  }
   else setStatus(spot, 'AVAILABLE')
 }, 4000)
 
@@ -544,9 +560,12 @@ export const mockApi: Api = {
       notify('RESERVATION_CANCELLED', `You cancelled your reservation for ${reservation.spotCode}.`)
     }),
 
-  startSession: (spotId, reservationId) =>
+  startSession: (spotId, licencePlate, reservationId) =>
     delay(() => {
       const spot = findSpot(spotId)
+      // Like reservation-service: a plausible plate is required, stored upper case with single spaces.
+      if (!isPlausiblePlate(licencePlate)) throw new ApiError(400, 'Enter the plate as it is on the car, e.g. CJ 07 ABC.')
+      const plate = normalizePlate(licencePlate)
       if (activeSession()) throw new ApiError(409, 'You already have a session running.')
       const ownReservation = reservations.find((r) => r.id === reservationId && r.status === 'ACTIVE' && r.spotId === spotId)
       if (spot.status !== 'AVAILABLE' && !ownReservation) throw new ApiError(409, `${spot.code} is no longer free.`)
@@ -558,12 +577,13 @@ export const mockApi: Api = {
         spotCode: spot.code,
         locationId: location.id,
         locationName: location.name,
+        licencePlate: plate,
         status: 'ACTIVE',
         startedAt: new Date().toISOString(),
         cost: 0,
       }
       sessions.push(session)
-      setStatus(spot, 'OCCUPIED', DRIVER_ID)
+      setStatus(spot, 'OCCUPIED', DRIVER_ID, plate)
       return session
     }),
 

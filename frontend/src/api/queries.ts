@@ -127,6 +127,8 @@ export function useLiveSpotStatus() {
                   ...s,
                   status: event.status,
                   heldBy: event.heldBy,
+                  // Cleared when the car leaves, so not kept from the old value.
+                  licencePlate: event.licencePlate,
                   type: event.type ?? s.type,
                   evCharging: event.evCharging ?? s.evCharging,
                   accessible: event.accessible ?? s.accessible,
@@ -176,7 +178,9 @@ export const useMoveReservation = () =>
 export const useExtendReservation = () => useParkingMutation((id: string) => api.extendReservation(id))
 export const useCancelReservation = () => useParkingMutation((id: string) => api.cancelReservation(id))
 export const useStartSession = () =>
-  useParkingMutation(({ spotId, reservationId }: { spotId: string; reservationId?: string }) => api.startSession(spotId, reservationId))
+  useParkingMutation(({ spotId, reservationId, licencePlate }: { spotId: string; reservationId?: string; licencePlate: string }) =>
+    api.startSession(spotId, licencePlate, reservationId),
+  )
 export const useEndSession = () => useParkingMutation((id: string) => api.endSession(id))
 export const useRetryPayment = () =>
   useParkingMutation(({ paymentId, method }: { paymentId: string; method?: PaymentMethod }) => api.retryPayment(paymentId, method))

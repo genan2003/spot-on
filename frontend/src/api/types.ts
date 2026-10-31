@@ -66,6 +66,8 @@ export interface Spot {
   status: SpotStatus
   /** Set when status is RESERVED or OCCUPIED, so the driver can recognise their own spot. */
   heldBy?: string
+  /** The parked car's plate while OCCUPIED (given at session start), for the admin. */
+  licencePlate?: string
 }
 
 export type ReservationStatus = 'PENDING' | 'ACTIVE' | 'CANCELLED' | 'EXPIRED' | 'COMPLETED'
@@ -95,6 +97,7 @@ export interface ParkingSession {
   spotCode: string
   locationId: string
   locationName: string
+  licencePlate?: string
   status: 'ACTIVE' | 'COMPLETED'
   startedAt: string
   endedAt?: string
@@ -179,6 +182,7 @@ export interface SpotStatusChanged {
   locationId: string
   status: SpotStatus
   heldBy?: string
+  licencePlate?: string
   type?: SpotType
   evCharging?: boolean
   accessible?: boolean

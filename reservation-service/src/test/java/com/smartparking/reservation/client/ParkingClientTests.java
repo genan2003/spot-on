@@ -100,14 +100,14 @@ class ParkingClientTests {
 	void unknownSpotIsNotFound() {
 		server.expect(requestTo("http://parking/api/v1/spots/" + SPOT + "/occupy")).andRespond(withResourceNotFound());
 
-		assertThatThrownBy(() -> client.occupySpot(SPOT, "driver-1", HOLD)).isInstanceOf(EntityNotFoundException.class);
+		assertThatThrownBy(() -> client.occupySpot(SPOT, "driver-1", HOLD, "CJ 07 ABC")).isInstanceOf(EntityNotFoundException.class);
 	}
 
 	@Test
 	void serverErrorMeansUnavailableAfterThreeAttempts() {
 		server.expect(times(3), requestTo("http://parking/api/v1/spots/" + SPOT + "/occupy")).andRespond(withServerError());
 
-		assertThatThrownBy(() -> client.occupySpot(SPOT, "driver-1", HOLD)).isInstanceOf(ParkingServiceUnavailableException.class);
+		assertThatThrownBy(() -> client.occupySpot(SPOT, "driver-1", HOLD, "CJ 07 ABC")).isInstanceOf(ParkingServiceUnavailableException.class);
 		server.verify();
 	}
 

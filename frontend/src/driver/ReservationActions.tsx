@@ -1,7 +1,8 @@
 import { Link } from 'react-router'
-import { useCancelReservation, useExtendReservation, useNow, useStartSession } from '../api/queries'
+import { useCancelReservation, useExtendReservation, useNow } from '../api/queries'
 import type { Reservation } from '../api/types'
 import { button } from '../lib/ui'
+import { StartSession } from './StartSession'
 
 /**
  * What a driver can do with their reservation, the same on "My parking" and in the spot sheet:
@@ -18,7 +19,6 @@ export function ReservationActions({
   showMove?: boolean
 }) {
   const now = useNow()
-  const start = useStartSession()
   const extend = useExtendReservation()
   const cancel = useCancelReservation()
   const expired = new Date(reservation.expiresAt).getTime() <= now
@@ -28,14 +28,7 @@ export function ReservationActions({
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          className={button.primary}
-          disabled={start.isPending || expired}
-          onClick={() => start.mutate({ spotId: reservation.spotId, reservationId: reservation.id }, { onSuccess: onStarted })}
-        >
-          {start.isPending ? 'Starting session…' : 'Start session'}
-        </button>
+        <StartSession spotId={reservation.spotId} reservationId={reservation.id} disabled={expired} onStarted={onStarted} />
         {!reservation.extended && (
           <button type="button" className={button.secondary} disabled={extend.isPending || expired} onClick={() => extend.mutate(reservation.id)}>
             {extend.isPending ? 'Extending…' : `Extend by ${holdMinutes} min`}
@@ -53,7 +46,7 @@ export function ReservationActions({
           {cancel.isPending ? 'Cancelling…' : 'Cancel reservation'}
         </button>
       </div>
-      <ErrorLine error={start.error ?? extend.error ?? cancel.error} />
+      <ErrorLine error={extend.error ?? cancel.error} />
     </>
   )
 }

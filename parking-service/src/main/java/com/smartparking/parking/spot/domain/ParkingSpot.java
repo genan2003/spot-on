@@ -65,6 +65,9 @@ public class ParkingSpot {
 	/** Id of the reservation or session holding the spot, {@code null} otherwise. */
 	private UUID holdId;
 
+	/** Plate of the car parked here while occupied (given at session start), {@code null} otherwise. */
+	private String licencePlate;
+
 	@Transient
 	private SpotState state = new AvailableState();
 
@@ -117,11 +120,14 @@ public class ParkingSpot {
 			return;
 		}
 		state.reserve(this);
-		hold(driverId, reservationId);
+		hold(driverId, reservationId, null);
 	}
 
-	/** A driver may park on a free spot, or on a spot they reserved themselves. The session becomes the hold. */
-	public void occupy(String driverId, UUID sessionId) {
+	/**
+	 * A driver may park on a free spot, or on a spot they reserved themselves. The session becomes the hold, and
+	 * the car's plate is kept until the spot is freed, so the admin can see who is parked there.
+	 */
+	public void occupy(String driverId, UUID sessionId, String plate) {
 		if (status == SpotStatus.OCCUPIED && isHeldBy(sessionId)) {
 			return;
 		}
@@ -129,7 +135,7 @@ public class ParkingSpot {
 			throw new IllegalSpotStateTransitionException("Spot " + code + " is reserved by another driver.");
 		}
 		state.occupy(this);
-		hold(driverId, sessionId);
+		hold(driverId, sessionId, plate);
 	}
 
 	/**
@@ -160,13 +166,14 @@ public class ParkingSpot {
 		this.state = newState;
 		this.status = newState.getStatus();
 		if (status == SpotStatus.AVAILABLE || status == SpotStatus.OUT_OF_SERVICE) {
-			hold(null, null);
+			hold(null, null, null);
 		}
 	}
 
-	private void hold(String driverId, UUID newHoldId) {
+	private void hold(String driverId, UUID newHoldId, String plate) {
 		this.heldBy = driverId;
 		this.holdId = newHoldId;
+		this.licencePlate = plate;
 	}
 
 	@PostLoad

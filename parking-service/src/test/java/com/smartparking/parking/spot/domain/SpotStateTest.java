@@ -72,17 +72,20 @@ class SpotStateTest {
 		spot.reserve(DRIVER, reservation);
 		assertThat(spot.getHeldBy()).isEqualTo(DRIVER);
 		assertThat(spot.isHeldBy(reservation)).isTrue();
-		spot.occupy(DRIVER, session);
+		assertThat(spot.getLicencePlate()).isNull();
+		spot.occupy(DRIVER, session, "B 123 ABC");
 		assertThat(spot.isHeldBy(session)).isTrue();
+		assertThat(spot.getLicencePlate()).isEqualTo("B 123 ABC");
 		spot.release(session);
 		assertThat(spot.getHeldBy()).isNull();
 		assertThat(spot.getHoldId()).isNull();
+		assertThat(spot.getLicencePlate()).isNull();
 	}
 
 	@Test
 	void onlyTheDriverWhoReservedCanParkThere() {
 		ParkingSpot spot = spotIn(SpotStatus.RESERVED);
-		assertThatThrownBy(() -> spot.occupy("driver-2", UUID.randomUUID())).isInstanceOf(IllegalSpotStateTransitionException.class)
+		assertThatThrownBy(() -> spot.occupy("driver-2", UUID.randomUUID(), "B 123 ABC")).isInstanceOf(IllegalSpotStateTransitionException.class)
 			.hasMessageContaining("reserved by another driver");
 		assertThat(spot.getStatus()).isEqualTo(SpotStatus.RESERVED);
 	}
@@ -106,7 +109,7 @@ class SpotStateTest {
 		assertThat(reserved.isHeldBy(HOLD)).isTrue();
 
 		ParkingSpot occupied = spotIn(SpotStatus.OCCUPIED);
-		occupied.occupy(DRIVER, HOLD);
+		occupied.occupy(DRIVER, HOLD, "B 123 ABC");
 		assertThat(occupied.getStatus()).isEqualTo(SpotStatus.OCCUPIED);
 		assertThat(occupied.isHeldBy(HOLD)).isTrue();
 	}
@@ -122,7 +125,7 @@ class SpotStateTest {
 		return switch (name) {
 			// A new hold each time: repeating the current hold is a no-op (see repeatingTheSameHoldChangesNothing).
 			case "reserve" -> s -> s.reserve(DRIVER, UUID.randomUUID());
-			case "occupy" -> s -> s.occupy(DRIVER, UUID.randomUUID());
+			case "occupy" -> s -> s.occupy(DRIVER, UUID.randomUUID(), "B 123 ABC");
 			case "release" -> s -> s.release(HOLD);
 			case "markOutOfService" -> ParkingSpot::markOutOfService;
 			case "returnToService" -> ParkingSpot::returnToService;
@@ -136,7 +139,7 @@ class SpotStateTest {
 		switch (status) {
 			case AVAILABLE -> { }
 			case RESERVED -> spot.reserve(DRIVER, HOLD);
-			case OCCUPIED -> spot.occupy(DRIVER, HOLD);
+			case OCCUPIED -> spot.occupy(DRIVER, HOLD, "B 123 ABC");
 			case OUT_OF_SERVICE -> spot.markOutOfService();
 		}
 		return spot;

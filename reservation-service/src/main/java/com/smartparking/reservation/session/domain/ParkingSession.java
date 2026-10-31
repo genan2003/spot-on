@@ -42,6 +42,9 @@ public class ParkingSession {
 
 	private boolean evCharging;
 
+	/** The car's plate as given at entry, normalised ({@link LicencePlates}). */
+	private String licencePlate;
+
 	/** The reservation this session fulfils, if the driver reserved first. */
 	@OneToOne
 	@JoinColumn(name = "reservation_id")
@@ -62,7 +65,7 @@ public class ParkingSession {
 	private PaymentStatus paymentStatus;
 
 	public ParkingSession(UUID id, String driverId, UUID spotId, String spotCode, UUID locationId, String locationName,
-			Bay bay, Reservation reservation, Instant startedAt) {
+			Bay bay, String licencePlate, Reservation reservation, Instant startedAt) {
 		this.id = id;
 		this.driverId = driverId;
 		this.spotId = spotId;
@@ -71,6 +74,7 @@ public class ParkingSession {
 		this.locationName = locationName;
 		this.spotType = bay.type();
 		this.evCharging = bay.evCharging();
+		this.licencePlate = licencePlate;
 		this.reservation = reservation;
 		this.startedAt = startedAt;
 	}

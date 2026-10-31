@@ -41,8 +41,8 @@ public class ParkingClient {
 	}
 
 	/** {@code sessionId} becomes the spot's hold (it replaces the reservation's). */
-	public HeldSpot occupySpot(UUID spotId, String driverId, UUID sessionId) {
-		return hold(spotId, "occupy", Map.of("driverId", driverId, "holdId", sessionId));
+	public HeldSpot occupySpot(UUID spotId, String driverId, UUID sessionId, String licencePlate) {
+		return hold(spotId, "occupy", Map.of("driverId", driverId, "holdId", sessionId, "licencePlate", licencePlate));
 	}
 
 	/**

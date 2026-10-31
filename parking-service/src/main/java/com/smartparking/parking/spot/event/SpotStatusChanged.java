@@ -13,11 +13,12 @@ import java.util.UUID;
  * redraws the bay without a reload.
  */
 public record SpotStatusChanged(UUID eventId, Instant occurredAt, UUID spotId, UUID locationId, SpotStatus status, String heldBy,
-		String code, SpotType type, boolean evCharging, boolean accessible) {
+		String code, SpotType type, boolean evCharging, boolean accessible, String licencePlate) {
 
 	public static SpotStatusChanged of(ParkingSpot spot) {
 		return new SpotStatusChanged(UUID.randomUUID(), Instant.now(), spot.getId(), spot.getLocation().getId(),
-				spot.getStatus(), spot.getHeldBy(), spot.getCode(), spot.getType(), spot.isEvCharging(), spot.isAccessible());
+				spot.getStatus(), spot.getHeldBy(), spot.getCode(), spot.getType(), spot.isEvCharging(), spot.isAccessible(),
+				spot.getLicencePlate());
 	}
 
 }

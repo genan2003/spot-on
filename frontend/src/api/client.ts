@@ -81,7 +81,7 @@ export interface Api {
   /** Holds the spot one more hold time; allowed once. */
   extendReservation(id: string): Promise<Reservation>
   cancelReservation(id: string): Promise<void>
-  startSession(spotId: string, reservationId?: string): Promise<ParkingSession>
+  startSession(spotId: string, licencePlate: string, reservationId?: string): Promise<ParkingSession>
   endSession(id: string): Promise<ParkingSession>
   /** Tries a failed payment again; with a method, pays it that way instead ("Pay by card instead"). */
   retryPayment(paymentId: string, method?: PaymentMethod): Promise<void>
@@ -124,8 +124,8 @@ const httpApi: Api = {
   moveReservation: (id, spotId) => request(`/reservations/${id}`, json('PATCH', { spotId })),
   extendReservation: (id) => request(`/reservations/${id}/extend`, json('POST')),
   cancelReservation: (id) => request(`/reservations/${id}`, json('DELETE')),
-  startSession: (spotId, reservationId) =>
-    request('/parking-sessions', json('POST', { spotId, reservationId, driverId: DRIVER_ID })),
+  startSession: (spotId, licencePlate, reservationId) =>
+    request('/parking-sessions', json('POST', { spotId, reservationId, driverId: DRIVER_ID, licencePlate })),
   endSession: (id) => request(`/parking-sessions/${id}/end`, json('POST')),
   retryPayment: (paymentId, method) => request(`/payments/${paymentId}/retry`, json('POST', method ? { method } : undefined)),
   getPayment: (paymentId) => request(`/payments/${paymentId}`),

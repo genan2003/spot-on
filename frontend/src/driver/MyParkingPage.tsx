@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Link } from 'react-router'
 import { keys, useCurrentParking, useEndSession, useNow } from '../api/queries'
 import type { CurrentParking, ParkingSession, Reservation } from '../api/types'
+import { Plate } from '../components/Plate'
 import { QueryState } from '../components/QueryState'
 import { StatusLabel, StatusMark } from '../components/status'
 import { clock, duration, lei, timeOfDay } from '../lib/format'
@@ -117,6 +118,11 @@ function SessionPanel({ session }: { session: ParkingSession }) {
         {session.spotCode}
       </h2>
       <p className="text-ink-muted">{session.locationName}</p>
+      {session.licencePlate && (
+        <p className="mt-2">
+          <Plate plate={session.licencePlate} />
+        </p>
+      )}
       <p className="mt-6 text-ink-muted">Parked for</p>
       <p className="tabular text-3xl font-extrabold" role="timer">
         {clock(now - new Date(session.startedAt).getTime())}
@@ -138,6 +144,7 @@ function Receipt({ session }: { session: ParkingSession }) {
   const rows: [string, string][] = [
     ['Spot', session.spotCode],
     ['Car park', session.locationName],
+    ...(session.licencePlate ? [['Car', session.licencePlate] as [string, string]] : []),
     ['Entered', timeOfDay(session.startedAt)],
     ['Left', timeOfDay(session.endedAt!)],
     ['Duration', duration(new Date(session.endedAt!).getTime() - new Date(session.startedAt).getTime())],

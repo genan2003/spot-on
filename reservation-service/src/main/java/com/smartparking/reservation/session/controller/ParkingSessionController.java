@@ -30,7 +30,8 @@ public class ParkingSessionController {
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	public SessionResponse start(@Valid @RequestBody StartSessionRequest request) {
-		return mapper.toResponse(sessionFacade.startSession(request.driverId(), request.spotId(), request.reservationId()));
+		return mapper.toResponse(sessionFacade.startSession(request.driverId(), request.spotId(), request.reservationId(),
+				request.licencePlate()));
 	}
 
 	/** The driver's sessions, newest first (at most 50). */

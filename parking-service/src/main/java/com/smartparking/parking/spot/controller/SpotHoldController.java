@@ -34,7 +34,7 @@ public class SpotHoldController {
 
 	@PostMapping("/occupy")
 	public HeldSpotResponse occupy(@PathVariable UUID spotId, @Valid @RequestBody HoldSpotRequest request) {
-		return mapper.toHeldResponse(holdService.occupy(spotId, request.driverId(), request.holdId()));
+		return mapper.toHeldResponse(holdService.occupy(spotId, request.driverId(), request.holdId(), request.licencePlate()));
 	}
 
 	@PostMapping("/release")

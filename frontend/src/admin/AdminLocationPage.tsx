@@ -4,6 +4,7 @@ import { useAddSpots, useDeleteSpot, useLocation, useSetSpotStatus, useSpots } f
 import type { Spot, SpotStatus, SpotType } from '../api/types'
 import { LevelPicker } from '../components/LevelPicker'
 import { Legend } from '../components/Legend'
+import { Plate } from '../components/Plate'
 import { QueryState } from '../components/QueryState'
 import { SpotPlan } from '../components/SpotPlan'
 import { StatusLabel, StatusMark } from '../components/status'
@@ -144,6 +145,11 @@ function SpotPanel({ spot, onClose }: { spot: Spot; onClose: () => void }) {
       <p className="mt-2">
         <StatusLabel status={spot.status} />
       </p>
+      {spot.status === 'OCCUPIED' && spot.licencePlate && (
+        <p className="mt-2 flex items-center gap-2">
+          <span className="text-ink-muted">Car</span> <Plate plate={spot.licencePlate} />
+        </p>
+      )}
       <dl className="mt-4 divide-y divide-hairline border-y border-hairline text-sm">
         {rows.map(([label, value]) => (
           <div key={label} className="flex justify-between py-2">
@@ -323,7 +329,7 @@ function SpotTable({
                 onChange={() => onCheck(allChecked ? new Set() : new Set(spots.map((s) => s.id)))}
               />
             </th>
-            {['Spot', 'Zone', 'Type', 'EV charging', 'Accessible', 'Status'].map((h) => (
+            {['Spot', 'Zone', 'Type', 'EV charging', 'Accessible', 'Status', 'Car'].map((h) => (
               <th key={h} scope="col" className="px-4 py-2 font-semibold">
                 {h}
               </th>
@@ -354,6 +360,7 @@ function SpotTable({
               <td className="px-4 py-1">
                 <StatusLabel status={spot.status} />
               </td>
+              <td className="px-4 py-1">{spot.status === 'OCCUPIED' && spot.licencePlate && <Plate plate={spot.licencePlate} />}</td>
             </tr>
           ))}
         </tbody>

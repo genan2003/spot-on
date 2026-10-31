@@ -74,7 +74,7 @@ class SpotHoldEventListenerTests {
 		UUID reservation = UUID.randomUUID();
 		UUID session = UUID.randomUUID();
 		holdService.reserve(spot, "driver-1", reservation);
-		holdService.occupy(spot, "driver-1", session);
+		holdService.occupy(spot, "driver-1", session, "B 123 ABC");
 
 		publish("session.completed", UUID.randomUUID(), spot, reservation, session);
 

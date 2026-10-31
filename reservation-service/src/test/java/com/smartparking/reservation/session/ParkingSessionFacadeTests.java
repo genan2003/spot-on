@@ -105,37 +105,38 @@ class ParkingSessionFacadeTests {
 
 	@Test
 	void startingOnASpotThatIsNotFreeSavesNothing() {
-		when(parkingClient.occupySpot(eq(SPOT), eq("driver-1"), any()))
+		when(parkingClient.occupySpot(eq(SPOT), eq("driver-1"), any(), eq("CJ 07 ABC")))
 			.thenThrow(new SpotConflictException("Spot A1 is occupied, so it can't be occupied."));
 
-		assertThatThrownBy(() -> facade.startSession("driver-1", SPOT, null)).isInstanceOf(SpotConflictException.class);
+		assertThatThrownBy(() -> facade.startSession("driver-1", SPOT, null, " cj 07  abc ")).isInstanceOf(SpotConflictException.class);
 		verify(sessionRepository, never()).saveAndFlush(any());
 	}
 
 	@Test
 	void startingOnAFreeSpotRecordsTheEntryTimeWithTheSessionAsTheHold() {
 		ArgumentCaptor<UUID> hold = ArgumentCaptor.forClass(UUID.class);
-		when(parkingClient.occupySpot(eq(SPOT), eq("driver-1"), hold.capture()))
+		when(parkingClient.occupySpot(eq(SPOT), eq("driver-1"), hold.capture(), eq("CJ 07 ABC")))
 			.thenReturn(new HeldSpot(SPOT, "A1", LOCATION, "Central Garage", "OCCUPIED", "driver-1", BayType.MOTORCYCLE, false));
 		when(sessionRepository.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
 
-		ParkingSession session = facade.startSession("driver-1", SPOT, null);
+		ParkingSession session = facade.startSession("driver-1", SPOT, null, " cj 07  abc ");
 
 		assertThat(session.getId()).isEqualTo(hold.getValue());
 		assertThat(session.getStartedAt()).isEqualTo(EXIT);
 		assertThat(session.getLocationName()).isEqualTo("Central Garage");
 		assertThat(session.getBay()).isEqualTo(new Bay(BayType.MOTORCYCLE, false));
+		assertThat(session.getLicencePlate()).isEqualTo("CJ 07 ABC");
 		verify(eventPublisher).publishEvent(any(SessionStartedEvent.class));
 	}
 
 	@Test
 	void aFailedSaveGivesTheSpotBack() {
 		ArgumentCaptor<UUID> hold = ArgumentCaptor.forClass(UUID.class);
-		when(parkingClient.occupySpot(eq(SPOT), eq("driver-1"), hold.capture()))
+		when(parkingClient.occupySpot(eq(SPOT), eq("driver-1"), hold.capture(), eq("CJ 07 ABC")))
 			.thenReturn(new HeldSpot(SPOT, "A1", LOCATION, "Central Garage", "OCCUPIED", "driver-1"));
 		when(sessionRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("uq_session_active_per_driver"));
 
-		assertThatThrownBy(() -> facade.startSession("driver-1", SPOT, null)).isInstanceOf(DataIntegrityViolationException.class);
+		assertThatThrownBy(() -> facade.startSession("driver-1", SPOT, null, " cj 07  abc ")).isInstanceOf(DataIntegrityViolationException.class);
 		verify(parkingClient).releaseSpotIfHeld(SPOT, hold.getValue());
 	}
 
@@ -144,7 +145,7 @@ class ParkingSessionFacadeTests {
 	}
 
 	private ParkingSession activeSession(Bay bay) {
-		ParkingSession session = new ParkingSession(UUID.randomUUID(), "driver-1", SPOT, "A1", LOCATION, "Central Garage", bay, null, ENTRY);
+		ParkingSession session = new ParkingSession(UUID.randomUUID(), "driver-1", SPOT, "A1", LOCATION, "Central Garage", bay, "CJ 07 ABC", null, ENTRY);
 		when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 		return session;
 	}

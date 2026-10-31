@@ -298,6 +298,9 @@ class ParkingApiIntegrationTests {
 			.andExpect(jsonPath("$.status").value("OCCUPIED"))
 			.andExpect(jsonPath("$.type").value("STANDARD"))
 			.andExpect(jsonPath("$.evCharging").value(false));
+		// The admin sees which car is parked on the bay, until it is freed.
+		mvc.perform(get("/api/v1/parking-locations/{id}/spots", locationId))
+			.andExpect(jsonPath("$[?(@.id == '%s')].licencePlate".formatted(spotId)).value("CJ 07 ABC"));
 		mvc.perform(delete("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isConflict());
 
 		// The session is the hold now: releasing the old reservation must not free the parked car.
@@ -305,10 +308,13 @@ class ParkingApiIntegrationTests {
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.detail").value("Spot C1 is no longer held by that reservation or session."));
 		release(spotId, session).andExpect(jsonPath("$.status").value("AVAILABLE"));
+		mvc.perform(get("/api/v1/parking-locations/{id}/spots", locationId))
+			.andExpect(jsonPath("$[?(@.id == '%s')].licencePlate".formatted(spotId)).value(org.hamcrest.Matchers.contains((Object) null)));
 
 		// Observer: every committed change went through RabbitMQ to the STOMP topic.
 		verify(messagingTemplate, timeout(5000)).convertAndSend(eq("/topic/spot-status"),
-				argThat((Object e) -> e instanceof SpotStatusChanged c && c.status() == SpotStatus.OCCUPIED && "driver-1".equals(c.heldBy())));
+				argThat((Object e) -> e instanceof SpotStatusChanged c && c.status() == SpotStatus.OCCUPIED && "driver-1".equals(c.heldBy())
+						&& "CJ 07 ABC".equals(c.licencePlate())));
 
 		mvc.perform(delete("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isNoContent());
 		mvc.perform(get("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isNotFound());
@@ -341,8 +347,10 @@ class ParkingApiIntegrationTests {
 	}
 
 	private ResultActions hold(String spotId, String action, String driverId, String holdId) throws Exception {
+		// reservation-service sends the car's plate with occupy only.
+		String plate = action.equals("occupy") ? ",\"licencePlate\":\"CJ 07 ABC\"" : "";
 		return send(post("/api/v1/spots/{spotId}/" + action, spotId), """
-				{"driverId":"%s","holdId":"%s"}""".formatted(driverId, holdId));
+				{"driverId":"%s","holdId":"%s"%s}""".formatted(driverId, holdId, plate));
 	}
 
 	private ResultActions release(String spotId, String holdId) throws Exception {

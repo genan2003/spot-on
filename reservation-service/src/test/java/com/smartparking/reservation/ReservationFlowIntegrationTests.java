@@ -53,6 +53,18 @@ import org.springframework.test.web.servlet.ResultActions;
 @AutoConfigureMockMvc
 class ReservationFlowIntegrationTests {
 
+
+	@Test
+	void aSessionNeedsAPlausibleLicencePlate() throws Exception {
+		String body = "{\"spotId\":\"%s\",\"driverId\":\"driver-plate\"%s}";
+		for (String plate : new String[] { "", ",\"licencePlate\":\" \"", ",\"licencePlate\":\"B\"",
+				",\"licencePlate\":\"CJ-07-ABC-1234\"", ",\"licencePlate\":\"CJ_07\"" }) {
+			json(post("/api/v1/parking-sessions"), body.formatted(UUID.randomUUID(), plate))
+				.andExpect(status().isBadRequest());
+		}
+		verify(parkingClient, never()).occupySpot(any(), eq("driver-plate"), any(), any());
+	}
+
 	private static final UUID LOCATION = UUID.randomUUID();
 
 	@Autowired
@@ -81,7 +93,7 @@ class ReservationFlowIntegrationTests {
 		driver = "driver-" + UUID.randomUUID();
 		HeldSpot held = new HeldSpot(spot, "A1", LOCATION, "Central Garage", "RESERVED", driver);
 		when(parkingClient.reserveSpot(eq(spot), eq(driver), any())).thenReturn(held);
-		when(parkingClient.occupySpot(eq(spot), eq(driver), any())).thenReturn(held);
+		when(parkingClient.occupySpot(eq(spot), eq(driver), any(), any())).thenReturn(held);
 		if (events == null) {
 			events = new PublishedEvents(rabbitTemplate);
 		}
@@ -106,9 +118,12 @@ class ReservationFlowIntegrationTests {
 		current().andExpect(jsonPath("$.reservation.id").value(reservationId));
 
 		String sessionId = id(json(post("/api/v1/parking-sessions"),
-				"{\"spotId\":\"%s\",\"reservationId\":\"%s\",\"driverId\":\"%s\"}".formatted(spot, reservationId, driver))
+				"{\"spotId\":\"%s\",\"reservationId\":\"%s\",\"driverId\":\"%s\",\"licencePlate\":\"cj  07 abc\"}".formatted(spot, reservationId, driver))
 			.andExpect(status().isCreated())
-			.andExpect(jsonPath("$.status").value("ACTIVE")));
+			.andExpect(jsonPath("$.status").value("ACTIVE"))
+			.andExpect(jsonPath("$.licencePlate").value("CJ 07 ABC")));
+		// parking-service gets the plate as the admin will read it.
+		verify(parkingClient).occupySpot(eq(spot), eq(driver), any(), eq("CJ 07 ABC"));
 
 		mvc.perform(get("/api/v1/reservations/{id}", reservationId)).andExpect(jsonPath("$.status").value("COMPLETED"));
 		current()
@@ -283,7 +298,7 @@ class ReservationFlowIntegrationTests {
 		mvc.perform(delete("/api/v1/reservations/{id}", cancelled)).andExpect(status().isNoContent());
 		String used = id(reserve(spot, driver).andExpect(status().isCreated()));
 		String sessionId = id(json(post("/api/v1/parking-sessions"),
-				"{\"spotId\":\"%s\",\"reservationId\":\"%s\",\"driverId\":\"%s\"}".formatted(spot, used, driver))
+				"{\"spotId\":\"%s\",\"reservationId\":\"%s\",\"driverId\":\"%s\",\"licencePlate\":\"cj  07 abc\"}".formatted(spot, used, driver))
 			.andExpect(status().isCreated()));
 		mvc.perform(post("/api/v1/parking-sessions/{id}/end", sessionId)).andExpect(status().isOk());
 

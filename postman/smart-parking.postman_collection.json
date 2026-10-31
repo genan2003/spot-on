@@ -1027,7 +1027,36 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"driverId\": \"{{otherDriverId}}\"\n}"
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"driverId\": \"{{otherDriverId}}\",\n  \"licencePlate\": \"B 999 XYZ\"\n}"
+            }
+          }
+        },
+        {
+          "name": "A session needs the car's licence plate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Problem detail', () => pm.expect(pm.response.json()).to.have.property('status', 400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/parking-sessions",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"reservationId\": \"{{reservationId}}\",\n  \"driverId\": \"{{driverId}}\",\n  \"licencePlate\": \"#\"\n}"
             }
           }
         },
@@ -1042,6 +1071,7 @@
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));",
                   "const body = pm.response.json();",
                   "pm.test('Session is active', () => pm.expect(body.status).to.eql('ACTIVE'));",
+                  "pm.test('Plate stored as the admin reads it', () => pm.expect(body.licencePlate).to.eql('CJ 07 ABC'));",
                   "pm.environment.set('sessionId', body.id);"
                 ]
               }
@@ -1058,8 +1088,29 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"reservationId\": \"{{reservationId}}\",\n  \"driverId\": \"{{driverId}}\"\n}"
+              "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"reservationId\": \"{{reservationId}}\",\n  \"driverId\": \"{{driverId}}\",\n  \"licencePlate\": \"cj  07 abc\"\n}"
             }
+          }
+        },
+        {
+          "name": "Admin sees the car's plate on the occupied spot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const spot = pm.response.json().find(s => s.id === pm.environment.get('spotId'));",
+                  "pm.test('Occupied by the driver', () => pm.expect(spot.status).to.eql('OCCUPIED'));",
+                  "pm.test('Shows the plate given at entry', () => pm.expect(spot.licencePlate).to.eql('CJ 07 ABC'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots"
           }
         },
         {
@@ -1172,6 +1223,7 @@
                   "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
                   "    const spot = pm.response.json().find(s => s.id === pm.environment.get('spotId'));",
                   "    pm.test('Held by nobody', () => pm.expect(spot.heldBy).to.be.null);",
+                  "    pm.test('The car left, so its plate is gone', () => pm.expect(spot.licencePlate).to.be.null);",
                   "}"
                 ]
               }

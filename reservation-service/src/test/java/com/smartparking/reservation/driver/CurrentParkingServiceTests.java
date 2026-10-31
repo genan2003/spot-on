@@ -92,7 +92,7 @@ class CurrentParkingServiceTests {
 
 	private ParkingSession lastSession(Instant endedAt, PaymentStatus payment) {
 		ParkingSession session = new ParkingSession(UUID.randomUUID(), DRIVER, UUID.randomUUID(), "A1", UUID.randomUUID(),
-				"Central Garage", Bay.STANDARD, null, endedAt.minus(Duration.ofHours(1)));
+				"Central Garage", Bay.STANDARD, "CJ 07 ABC", null, endedAt.minus(Duration.ofHours(1)));
 		session.end(endedAt, new BigDecimal("6.00"));
 		session.recordPayment(UUID.randomUUID(), payment);
 		when(sessions.findFirstByDriverIdAndStatusOrderByEndedAtDesc(DRIVER, SessionStatus.COMPLETED)).thenReturn(Optional.of(session));

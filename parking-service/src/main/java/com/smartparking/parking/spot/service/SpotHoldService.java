@@ -32,8 +32,8 @@ public class SpotHoldService {
 	}
 
 	@Transactional
-	public ParkingSpot occupy(UUID spotId, String driverId, UUID sessionId) {
-		return change(spotId, spot -> spot.occupy(driverId, sessionId));
+	public ParkingSpot occupy(UUID spotId, String driverId, UUID sessionId, String licencePlate) {
+		return change(spotId, spot -> spot.occupy(driverId, sessionId, licencePlate));
 	}
 
 	@Transactional

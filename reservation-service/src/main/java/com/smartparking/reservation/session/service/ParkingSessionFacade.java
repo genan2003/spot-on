@@ -8,6 +8,7 @@ import com.smartparking.reservation.pricing.PricingStrategy;
 import com.smartparking.reservation.reservation.domain.Reservation;
 import com.smartparking.reservation.reservation.domain.ReservationStatus;
 import com.smartparking.reservation.reservation.repository.ReservationRepository;
+import com.smartparking.reservation.session.domain.LicencePlates;
 import com.smartparking.reservation.session.domain.ParkingSession;
 import com.smartparking.reservation.session.domain.PaymentStatus;
 import com.smartparking.reservation.session.domain.SessionStatus;
@@ -55,16 +56,18 @@ public class ParkingSessionFacade {
 
 	/**
 	 * Starts a session on a spot that is free, or reserved by this driver. parking-service decides
-	 * (State pattern); a spot reserved by someone else, occupied or closed is refused with 409.
+	 * (State pattern); a spot reserved by someone else, occupied or closed is refused with 409. The car's plate
+	 * goes to parking-service with the occupy, so the admin sees it on the bay.
 	 */
-	public ParkingSession startSession(String driverId, UUID spotId, UUID reservationId) {
+	public ParkingSession startSession(String driverId, UUID spotId, UUID reservationId, String licencePlate) {
+		String plate = LicencePlates.normalize(licencePlate);
 		if (sessionRepository.existsByDriverIdAndStatus(driverId, SessionStatus.ACTIVE)) {
 			throw new IllegalStateException("You already have a session running.");
 		}
 		Reservation reservation = findOwnReservation(driverId, spotId, reservationId);
 
 		UUID sessionId = UUID.randomUUID();
-		HeldSpot spot = parkingClient.occupySpot(spotId, driverId, sessionId);
+		HeldSpot spot = parkingClient.occupySpot(spotId, driverId, sessionId, plate);
 
 		ParkingSession session;
 		try {
@@ -74,7 +77,7 @@ public class ParkingSessionFacade {
 					reservationRepository.save(reservation);
 				}
 				ParkingSession started = sessionRepository.saveAndFlush(new ParkingSession(sessionId, driverId, spotId,
-						spot.spotCode(), spot.locationId(), spot.locationName(), spot.bay(), reservation, clock.instant()));
+						spot.spotCode(), spot.locationId(), spot.locationName(), spot.bay(), plate, reservation, clock.instant()));
 				eventPublisher.publishEvent(SessionStartedEvent.of(started, clock.instant()));
 				return started;
 			});

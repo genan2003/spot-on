@@ -2,12 +2,13 @@ import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DRIVER_ID } from '../api/driver'
 import { ApiError } from '../api/errors'
-import { useCurrentParking, useLocation, useMoveReservation, useNow, useReserveSpot, useStartSession } from '../api/queries'
+import { useCurrentParking, useLocation, useMoveReservation, useNow, useReserveSpot } from '../api/queries'
 import type { Spot } from '../api/types'
 import { StatusLabel } from '../components/status'
 import { clock, describeSurcharge, levelName, spotTypeNames, timeOfDay } from '../lib/format'
 import { button } from '../lib/ui'
 import { ReservationActions } from './ReservationActions'
+import { StartSession } from './StartSession'
 
 /** Details and actions for the selected spot, as a sheet over the bottom of the screen. */
 export function SpotSheet({ spot, onClose }: { spot: Spot; onClose: () => void }) {
@@ -56,11 +57,10 @@ function SpotActions({ spot }: { spot: Spot }) {
   const navigate = useNavigate()
   const current = useCurrentParking()
   const reserve = useReserveSpot()
-  const start = useStartSession()
   const move = useMoveReservation()
   const now = useNow()
 
-  const error = [reserve.error, start.error, move.error].find(Boolean)
+  const error = [reserve.error, move.error].find(Boolean)
   const errorText =
     error instanceof ApiError && error.status === 409
       ? `Someone else took ${spot.code} a moment ago. Pick another free spot.`
@@ -127,14 +127,7 @@ function SpotActions({ spot }: { spot: Spot }) {
           <button type="button" className={button.primary} disabled={reserve.isPending} onClick={() => reserve.mutate(spot.id)}>
             {reserve.isPending ? 'Reserving…' : 'Reserve spot'}
           </button>
-          <button
-            type="button"
-            className={button.secondary}
-            disabled={start.isPending}
-            onClick={() => start.mutate({ spotId: spot.id }, { onSuccess: () => navigate('/parking') })}
-          >
-            Start session
-          </button>
+          <StartSession spotId={spot.id} primary={false} onStarted={() => navigate('/parking')} />
         </div>
       </>
     )
