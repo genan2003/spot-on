@@ -74,6 +74,8 @@ services:
       # Demo settings: override from the shell, e.g. RESERVATION_DURATION=1m docker compose up -d
       RESERVATION_DURATION: ${RESERVATION_DURATION:-15m}
       RESERVATION_REMINDER: ${RESERVATION_REMINDER:-5m}
+      # How long the circuit breaker to parking-service stays open after repeated failures.
+      PARKING_CIRCUIT_OPEN_FOR: ${PARKING_CIRCUIT_OPEN_FOR:-30s}
     ports:
       - "8082:8082"
     depends_on: *service-deps

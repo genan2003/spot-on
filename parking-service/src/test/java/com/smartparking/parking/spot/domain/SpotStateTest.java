@@ -99,6 +99,19 @@ class SpotStateTest {
 	}
 
 	@Test
+	void repeatingTheSameHoldChangesNothing() {
+		ParkingSpot reserved = spotIn(SpotStatus.RESERVED);
+		reserved.reserve(DRIVER, HOLD);
+		assertThat(reserved.getStatus()).isEqualTo(SpotStatus.RESERVED);
+		assertThat(reserved.isHeldBy(HOLD)).isTrue();
+
+		ParkingSpot occupied = spotIn(SpotStatus.OCCUPIED);
+		occupied.occupy(DRIVER, HOLD);
+		assertThat(occupied.getStatus()).isEqualTo(SpotStatus.OCCUPIED);
+		assertThat(occupied.isHeldBy(HOLD)).isTrue();
+	}
+
+	@Test
 	void onlyTheCurrentHoldCanBeReleased() {
 		ParkingSpot spot = spotIn(SpotStatus.OCCUPIED);
 		assertThatThrownBy(() -> spot.release(UUID.randomUUID())).isInstanceOf(IllegalSpotStateTransitionException.class);
@@ -107,8 +120,9 @@ class SpotStateTest {
 
 	private static Consumer<ParkingSpot> action(String name) {
 		return switch (name) {
-			case "reserve" -> s -> s.reserve(DRIVER, HOLD);
-			case "occupy" -> s -> s.occupy(DRIVER, HOLD);
+			// A new hold each time: repeating the current hold is a no-op (see repeatingTheSameHoldChangesNothing).
+			case "reserve" -> s -> s.reserve(DRIVER, UUID.randomUUID());
+			case "occupy" -> s -> s.occupy(DRIVER, UUID.randomUUID());
 			case "release" -> s -> s.release(HOLD);
 			case "markOutOfService" -> ParkingSpot::markOutOfService;
 			case "returnToService" -> ParkingSpot::returnToService;

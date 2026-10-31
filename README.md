@@ -61,6 +61,7 @@ Settings you may want to change for a demo. Set them in the shell when starting,
 | `RESERVATION_REMINDER` | reservation-service | `5m` | How long before the hold ends the driver is reminded (at most half the hold) |
 | `PAYMENT_FAILURE_RATE` | payment-service | `0.2` | Share of simulated payments that fail (0 to 1) |
 | `NOTIFICATION_CHANNEL` | notification-service | `PUSH` | `EMAIL`, `SMS` or `PUSH` (all simulated in the logs) |
+| `PARKING_CIRCUIT_OPEN_FOR` | reservation-service | `30s` | How long the circuit breaker to parking-service stays open after repeated failures |
 
 The gateway routes only the public API. parking-service's `/api/v1/spots/{id}/reserve|occupy|release`
 is internal: reservation-service calls it directly on the Docker network.

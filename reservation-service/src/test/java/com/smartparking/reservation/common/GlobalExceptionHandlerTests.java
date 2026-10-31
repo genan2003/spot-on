@@ -3,10 +3,14 @@ package com.smartparking.reservation.common;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.smartparking.reservation.client.ParkingCircuitOpenException;
+import com.smartparking.reservation.client.ParkingServiceUnavailableException;
 import jakarta.persistence.EntityNotFoundException;
+import java.time.Duration;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.Test;
@@ -56,6 +60,23 @@ class GlobalExceptionHandlerTests {
 			.andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON));
 	}
 
+	@Test
+	void parkingServiceDownBecomes503() throws Exception {
+		mvc.perform(get("/parking-down"))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.detail").value("Spot On can't reach the car park system right now. Try again in a moment."));
+	}
+
+	@Test
+	void openCircuitBecomes503WithRetryAfter() throws Exception {
+		mvc.perform(get("/circuit-open"))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(header().string("Retry-After", "30"))
+			.andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+			.andExpect(jsonPath("$.detail").value("The car park system isn't answering, so Spot On can't reserve or start "
+					+ "parking right now. Try again in 30 seconds."));
+	}
+
 	record Body(@NotBlank String name) {
 	}
 
@@ -75,6 +96,16 @@ class GlobalExceptionHandlerTests {
 		@GetMapping("/concurrent-change")
 		void concurrentChange() {
 			throw new OptimisticLockingFailureException("version mismatch");
+		}
+
+		@GetMapping("/parking-down")
+		void parkingDown() {
+			throw new ParkingServiceUnavailableException("parking-service answered 500.", null);
+		}
+
+		@GetMapping("/circuit-open")
+		void circuitOpen() {
+			throw new ParkingCircuitOpenException(Duration.ofSeconds(30), null);
 		}
 
 		@PostMapping("/validated")

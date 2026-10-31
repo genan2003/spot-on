@@ -1,6 +1,10 @@
 package com.smartparking.reservation.client;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.retry.Retry;
 import jakarta.persistence.EntityNotFoundException;
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -19,6 +23,8 @@ import org.springframework.web.client.RestClientResponseException;
  * spot is not one of them: that happens through events, except to undo a failed step.
  * parking-service's errors are turned back into this service's exceptions, keeping its message:
  * 409 → {@link SpotConflictException}, 404 → {@link EntityNotFoundException}, anything else → 503.
+ * Every call goes through a retry and a circuit breaker (Resilience4j, set up in {@link ParkingClientConfig}):
+ * retry outside, breaker inside, so each attempt counts towards the breaker's failure rate.
  */
 @Slf4j
 @Component
@@ -26,6 +32,8 @@ import org.springframework.web.client.RestClientResponseException;
 public class ParkingClient {
 
 	private final RestClient parkingRestClient;
+	private final CircuitBreaker parkingCircuitBreaker;
+	private final Retry parkingRetry;
 
 	/** {@code reservationId} becomes the spot's hold; only an event or release naming it can free the spot. */
 	public HeldSpot reserveSpot(UUID spotId, String driverId, UUID reservationId) {
@@ -65,7 +73,20 @@ public class ParkingClient {
 			.body(HeldSpot.class));
 	}
 
-	private static <T> T call(Supplier<T> request) {
+	private <T> T call(Supplier<T> request) {
+		Supplier<T> guarded = Retry.decorateSupplier(parkingRetry,
+				CircuitBreaker.decorateSupplier(parkingCircuitBreaker, () -> translate(request)));
+		try {
+			return guarded.get();
+		}
+		catch (CallNotPermittedException open) {
+			Duration openFor = Duration.ofMillis(
+					parkingCircuitBreaker.getCircuitBreakerConfig().getWaitIntervalFunctionInOpenState().apply(1));
+			throw new ParkingCircuitOpenException(openFor, open);
+		}
+	}
+
+	private static <T> T translate(Supplier<T> request) {
 		try {
 			return request.get();
 		}

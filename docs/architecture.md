@@ -92,7 +92,9 @@ Services talk in two ways:
 
 - **Synchronous REST** (`RestClient` with timeouts) when the caller needs an answer before it
   can reply: reservation-service asks parking-service to reserve or occupy a spot, and reads a
-  location's pricing rule.
+  location's pricing rule. Resilience4j wraps these calls: a call without an answer is retried
+  (safe, because each names its hold id and parking-service treats a repeat as already done), and a
+  circuit breaker stops calling a parking-service that keeps failing.
 - **Asynchronous events** on the RabbitMQ topic exchange `parking.events` for everything that
   can happen afterwards: notifications, payments, spot status updates. Each consumer has its own
   durable queue and ignores events it has already processed (dedupe on `eventId`).
@@ -284,7 +286,7 @@ confirmations.
 | Reserving spans two databases | Compensating release call if saving the reservation fails (a crash between the two steps remains a known gap) |
 | Late or repeated release events | Each spot remembers the reservation or session holding it; an event naming an older hold changes nothing |
 | Duplicate or redelivered events | Consumers dedupe on `eventId` |
-| parking-service unavailable | `RestClient` timeouts; a clear `503` instead of a hanging request |
+| parking-service unavailable | `RestClient` timeouts, Resilience4j retry (3 attempts) and circuit breaker (opens at 50 % failures, 30 s); a clear `503` with `Retry-After` instead of a hanging request |
 | Lost messages while a consumer is down | Durable queues; events wait until the consumer restarts |
 | Reservations never released | TTL queue + dead-letter exchange, with a `@Scheduled` sweeper as a fallback |
 

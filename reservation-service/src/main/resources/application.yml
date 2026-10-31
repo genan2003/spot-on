@@ -39,6 +39,16 @@ smartparking:
     url: ${PARKING_SERVICE_URL:http://localhost:8081}
     connect-timeout: 2s
     read-timeout: 3s
+    # Resilience4j (ParkingClientConfig): a failed call (no answer, 5xx) is tried again; when most recent
+    # calls fail, the circuit opens and drivers get an immediate 503 instead of waiting for each timeout.
+    retry:
+      max-attempts: 3
+      wait: 300ms
+    circuit-breaker:
+      failure-rate-threshold: 50
+      sliding-window-size: 10
+      minimum-calls: 5
+      open-for: ${PARKING_CIRCUIT_OPEN_FOR:30s}
   reservation:
     # How long a reserved spot is held before it expires.
     duration: ${RESERVATION_DURATION:15m}

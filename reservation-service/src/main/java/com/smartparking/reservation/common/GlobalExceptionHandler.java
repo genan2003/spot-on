@@ -1,12 +1,15 @@
 package com.smartparking.reservation.common;
 
+import com.smartparking.reservation.client.ParkingCircuitOpenException;
 import com.smartparking.reservation.client.ParkingServiceUnavailableException;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
@@ -46,6 +49,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		log.warn("parking-service call failed: {}", ex.getMessage());
 		return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service unavailable",
 				"Spot On can't reach the car park system right now. Try again in a moment.");
+	}
+
+	/**
+	 * The circuit breaker stopped calling parking-service after repeated failures. The driver is told
+	 * how long to wait; {@code Retry-After} carries the same time for other clients.
+	 */
+	@ExceptionHandler(ParkingCircuitOpenException.class)
+	public ResponseEntity<ProblemDetail> handleParkingCircuitOpen(ParkingCircuitOpenException ex) {
+		long seconds = Math.max(1, ex.getRetryAfter().toSeconds());
+		return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+			.header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+			.body(problem(HttpStatus.SERVICE_UNAVAILABLE, "Service unavailable",
+					"The car park system isn't answering, so Spot On can't reserve or start parking right now. "
+							+ "Try again in " + seconds + " seconds."));
 	}
 
 	private static ProblemDetail problem(HttpStatus status, String title, String detail) {

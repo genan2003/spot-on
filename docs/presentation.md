@@ -119,6 +119,16 @@ RabbitMQ UI → Queues → notification-service.dlq → Get messages:
   headers x-original-routingKey = reservation.created, x-exception-message = why it failed
 ```
 
+Optional, circuit breaker (parking-service down):
+
+```bash
+docker compose stop parking-service
+# reserve a spot twice: the first waits for 3 attempts, then "can't reach the car park system";
+# the second answers at once "Try again in 30 seconds" (log: circuit breaker CLOSED to OPEN)
+docker compose start parking-service
+# after 30 s (log: OPEN to HALF_OPEN) reserving works again
+```
+
 Optional, failed payment (put it back afterwards):
 
 ```bash
@@ -161,7 +171,8 @@ live takes about 30 seconds because Testcontainers starts PostgreSQL and RabbitM
 |---|---|---|
 | Why REST for reserving but events for everything else? | The driver needs a yes or no now, so holding the spot is synchronous. Freeing the spot, payment and notifications can happen a moment later and must survive a service being down, so they are events. | B |
 | How can two drivers never get the same spot across two databases? | parking-service: the spot's state rejects a held spot, and `@Version` fails the slower of two simultaneous requests. reservation-service: a partial unique index on open reservations per spot. If saving the reservation fails after the spot was held, a compensating call releases it. | B |
-| What if parking-service is down when someone reserves? | `RestClient` has timeouts; the driver gets a clear 503 "try again" instead of a hanging request. Nothing is saved. | A |
+| What if parking-service is down when someone reserves? | `RestClient` has timeouts, and Resilience4j retries a failed call up to 3 times. If most recent calls failed, the circuit breaker opens: for 30 s requests fail at once with a 503 "try again in 30 seconds" (and `Retry-After`) instead of each waiting for a timeout. Then two test calls decide whether it closes again. Nothing is saved. | A |
+| Isn't retrying a reserve dangerous? What if the first one worked? | Every call names its hold id (the reservation's id, made before the call). parking-service treats reserving or occupying a spot again with the hold it already has as done, so the retry gets the same answer instead of a 409. A 409 or 404 is an answer and is never retried. | A |
 | What if notification-service is down? | Nothing breaks. Its durable queue keeps the events and it catches up when it starts (shown in the demo). | B |
 | What if RabbitMQ delivers an event twice? | Each consumer stores the `eventId` in `processed_event` in the same transaction as the effect; a duplicate is skipped. payment-service also charges each session only once (unique index). | C |
 | What if an old event arrives late, e.g. "reservation expired" after the driver parked? | The spot remembers which reservation or session holds it. An event about an older hold changes nothing. | A |

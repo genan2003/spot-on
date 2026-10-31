@@ -108,13 +108,23 @@ public class ParkingSpot {
 		return Integer.parseInt(code.substring(zone.length()));
 	}
 
+	/**
+	 * Repeating a reserve or occupy with the hold that already has the spot changes nothing: reservation-service
+	 * retries a call whose answer got lost (Resilience4j), and the retry must not be refused as a double booking.
+	 */
 	public void reserve(String driverId, UUID reservationId) {
+		if (status == SpotStatus.RESERVED && isHeldBy(reservationId)) {
+			return;
+		}
 		state.reserve(this);
 		hold(driverId, reservationId);
 	}
 
 	/** A driver may park on a free spot, or on a spot they reserved themselves. The session becomes the hold. */
 	public void occupy(String driverId, UUID sessionId) {
+		if (status == SpotStatus.OCCUPIED && isHeldBy(sessionId)) {
+			return;
+		}
 		if (status == SpotStatus.RESERVED && !driverId.equals(heldBy)) {
 			throw new IllegalSpotStateTransitionException("Spot " + code + " is reserved by another driver.");
 		}

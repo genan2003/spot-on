@@ -2,6 +2,8 @@ package com.smartparking.reservation.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -10,12 +12,17 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
 import com.smartparking.reservation.pricing.PricingStrategyType;
 import com.smartparking.reservation.pricing.Bay;
 import com.smartparking.reservation.pricing.BaySurcharges;
 import com.smartparking.reservation.pricing.BayType;
 import com.smartparking.reservation.pricing.PriceBand;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalTime;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.UUID;
@@ -26,7 +33,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-/** parking-service's answers become this service's exceptions, with parking-service's message kept. */
+/**
+ * parking-service's answers become this service's exceptions, with parking-service's message kept;
+ * failed calls are retried and repeated failures open the circuit breaker (same settings as application.yml).
+ */
 class ParkingClientTests {
 
 	private static final UUID SPOT = UUID.fromString("00000000-0000-0000-0000-000000001001");
@@ -34,7 +44,19 @@ class ParkingClientTests {
 
 	private final RestClient.Builder builder = RestClient.builder().baseUrl("http://parking");
 	private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-	private final ParkingClient client = new ParkingClient(builder.build());
+	private final CircuitBreaker circuitBreaker = CircuitBreaker.of("test", CircuitBreakerConfig.custom()
+		.slidingWindowSize(10)
+		.minimumNumberOfCalls(5)
+		.failureRateThreshold(50)
+		.waitDurationInOpenState(Duration.ofSeconds(30))
+		.recordExceptions(ParkingServiceUnavailableException.class)
+		.build());
+	private final Retry retry = Retry.of("test", RetryConfig.custom()
+		.maxAttempts(3)
+		.waitDuration(Duration.ofMillis(1))
+		.retryExceptions(ParkingServiceUnavailableException.class)
+		.build());
+	private final ParkingClient client = new ParkingClient(builder.build(), circuitBreaker, retry);
 
 	@Test
 	void reservesASpot() {
@@ -82,10 +104,52 @@ class ParkingClientTests {
 	}
 
 	@Test
-	void serverErrorMeansUnavailable() {
-		server.expect(requestTo("http://parking/api/v1/spots/" + SPOT + "/occupy")).andRespond(withServerError());
+	void serverErrorMeansUnavailableAfterThreeAttempts() {
+		server.expect(times(3), requestTo("http://parking/api/v1/spots/" + SPOT + "/occupy")).andRespond(withServerError());
 
 		assertThatThrownBy(() -> client.occupySpot(SPOT, "driver-1", HOLD)).isInstanceOf(ParkingServiceUnavailableException.class);
+		server.verify();
+	}
+
+	@Test
+	void aFailedAttemptIsRetried() {
+		server.expect(once(), requestTo("http://parking/api/v1/spots/" + SPOT + "/reserve")).andRespond(withServerError());
+		server.expect(once(), requestTo("http://parking/api/v1/spots/" + SPOT + "/reserve"))
+			.andRespond(withSuccess("""
+					{"spotId":"%s","spotCode":"A1","locationId":"%s","locationName":"Central Garage","status":"RESERVED","heldBy":"driver-1",
+					 "type":"STANDARD","evCharging":false}""".formatted(SPOT, UUID.randomUUID()), MediaType.APPLICATION_JSON));
+
+		assertThat(client.reserveSpot(SPOT, "driver-1", HOLD).spotCode()).isEqualTo("A1");
+		server.verify();
+	}
+
+	@Test
+	void anAnswerIsNotRetriedAndKeepsTheCircuitClosed() {
+		server.expect(times(6), requestTo("http://parking/api/v1/spots/" + SPOT + "/reserve"))
+			.andRespond(withStatus(HttpStatus.CONFLICT));
+
+		for (int i = 0; i < 6; i++) {
+			assertThatThrownBy(() -> client.reserveSpot(SPOT, "driver-1", HOLD)).isInstanceOf(SpotConflictException.class);
+		}
+		server.verify();
+		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+	}
+
+	@Test
+	void repeatedFailuresOpenTheCircuitAndLaterCallsFailAtOnce() {
+		// Two driver requests of three attempts each; the fifth failed call (the minimum) opens the circuit,
+		// so the second request's last attempt is already refused without reaching parking-service.
+		server.expect(times(5), requestTo("http://parking/api/v1/spots/" + SPOT + "/reserve")).andRespond(withServerError());
+		for (int i = 0; i < 2; i++) {
+			assertThatThrownBy(() -> client.reserveSpot(SPOT, "driver-1", HOLD)).isInstanceOf(ParkingServiceUnavailableException.class);
+		}
+		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+
+		// The next request doesn't reach parking-service either: the open circuit answers itself.
+		assertThatThrownBy(() -> client.reserveSpot(SPOT, "driver-1", HOLD))
+			.isInstanceOfSatisfying(ParkingCircuitOpenException.class,
+					open -> assertThat(open.getRetryAfter()).isEqualTo(Duration.ofSeconds(30)));
+		server.verify();
 	}
 
 	@Test
