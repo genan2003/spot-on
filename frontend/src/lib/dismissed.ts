@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react'
+import { driverKey } from '../api/driver'
 
 // Ended reservations and paid receipts the driver closed with "Done", per browser. Storage can be
 // unavailable (private mode, blocked site data), so every access is guarded; then it lasts until reload.
-const KEY = 'spot-on.dismissed'
+const KEY = driverKey('dismissed')
 const listeners = new Set<() => void>()
 let memory: string[] = []
 

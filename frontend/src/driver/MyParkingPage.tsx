@@ -10,6 +10,7 @@ import { clock, duration, lei, timeOfDay } from '../lib/format'
 import { dismiss, useDismissed } from '../lib/dismissed'
 import { button } from '../lib/ui'
 import { PaymentOutcome, PayWith } from './Payment'
+import { DriverSwitch } from './DriverSwitch'
 import { ErrorLine, ReservationActions } from './ReservationActions'
 
 export function MyParkingPage() {
@@ -23,6 +24,7 @@ export function MyParkingPage() {
       <Link to="/history" className="mt-8 inline-flex min-h-11 items-center font-semibold text-sign hover:underline">
         Your parking history
       </Link>
+      <DriverSwitch />
     </div>
   )
 }

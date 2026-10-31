@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { Link, Outlet, useLocation as useRoute } from 'react-router'
+import { DRIVER_ID, driverName } from '../api/driver'
 import { useCurrentParking, useLiveNotifications, useLiveSpotStatus, useNotifications, useNow } from '../api/queries'
 import { BellIcon, ParkingSign } from '../components/icons'
 import { clock } from '../lib/format'
@@ -13,14 +15,23 @@ export function DriverLayout() {
   const total = notifications.data?.length ?? 0
   // Demo data resets on reload while the seen count persists: fewer than seen means a fresh list.
   const unread = total < seen ? total : total - seen
+  // Two tabs side by side can be different drivers; the tab title says which.
+  useEffect(() => {
+    document.title = `Spot On, ${driverName(DRIVER_ID).toLowerCase()}`
+  }, [])
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-xl flex-col">
       <header className="flex items-center justify-between px-4 py-3">
-        <Link to="/" className="flex items-center gap-2 text-lg font-extrabold tracking-tight">
-          <ParkingSign size={28} />
-          Spot On
-        </Link>
+        <div className="flex items-baseline gap-2">
+          <Link to="/" className="flex items-center gap-2 self-center text-lg font-extrabold tracking-tight">
+            <ParkingSign size={28} />
+            Spot On
+          </Link>
+          <Link to="/parking" className="text-sm text-ink-muted hover:underline" aria-label={`You are ${driverName(DRIVER_ID)}. Switch on My parking`}>
+            {driverName(DRIVER_ID)}
+          </Link>
+        </div>
         <nav className="flex items-center gap-4">
           <Link to="/parking" className="text-base font-semibold hover:underline">
             My parking

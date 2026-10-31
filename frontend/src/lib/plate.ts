@@ -1,6 +1,8 @@
+import { driverKey } from '../api/driver'
+
 // Licence plates, checked and written the way reservation-service does (LicencePlates.java), and the
 // last plate a driver used, remembered per browser. Storage can be unavailable, so access is guarded.
-const KEY = 'spot-on.licence-plate'
+const KEY = driverKey('licence-plate')
 let memory = ''
 
 const PATTERN = /^[A-Za-z0-9][A-Za-z0-9 -]{1,11}$/

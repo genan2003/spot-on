@@ -191,6 +191,16 @@ No double reservations: show `SpotConcurrencyTests` (parking-service) and `Reser
 live takes about 30 seconds because Testcontainers starts PostgreSQL and RabbitMQ:
 `cd parking-service && ./mvnw -q test -Dtest=SpotConcurrencyTests`.
 
+Live in the UI, two drivers side by side:
+
+```text
+Tab 1: http://localhost:3000/                 (Driver 1; the tab title and the header say which driver)
+Tab 2: http://localhost:3000/?driver=driver-2 (Driver 2; or switch at the bottom of My parking)
+Open the same free spot in both, press "Reserve spot" in one: the other tab's sheet turns to
+"Someone else has this spot" live (spot.status-changed over STOMP). Pressed at almost the same moment,
+one wins and the other gets 409: "Someone else took A1 a moment ago. Pick another free spot."
+```
+
 ## If something goes wrong
 
 | Problem | Fallback |

@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react'
+import { driverKey } from '../api/driver'
 
 // Remembers how many notifications the driver has seen, per browser. Storage can be unavailable
 // (private mode, blocked site data), so every access is guarded and the app works without it.
-const KEY = 'spot-on.seen-notifications'
+const KEY = driverKey('seen-notifications')
 const listeners = new Set<() => void>()
 let memory = 0
 
