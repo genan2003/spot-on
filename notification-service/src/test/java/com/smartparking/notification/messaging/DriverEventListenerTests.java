@@ -69,6 +69,19 @@ class DriverEventListenerTests {
 	}
 
 	@Test
+	void theDriverIsRemindedBeforeTheHoldEnds() {
+		String driver = "driver-" + UUID.randomUUID();
+		publish("reservation.expiring", Map.of("eventId", UUID.randomUUID(), "driverId", driver, "spotCode", "A1",
+				"locationName", "Central Garage", "expiresAt", "2026-03-04T08:15:00Z"));
+
+		await().atMost(Duration.ofSeconds(10)).until(() -> !notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver).isEmpty());
+		assertThat(notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver)).singleElement()
+			.satisfies(n -> assertThat(n.getKind()).isEqualTo(NotificationKind.RESERVATION_EXPIRING))
+			.extracting(Notification::getMessage)
+			.isEqualTo("A1 at Central Garage is held for you only until 10:15. Start your session or extend the hold before then.");
+	}
+
+	@Test
 	void aReservationCancelledBecauseTheSpotClosedSaysSo() {
 		String driver = "driver-" + UUID.randomUUID();
 		publish("reservation.cancelled", Map.of("eventId", UUID.randomUUID(), "driverId", driver, "spotCode", "A3",

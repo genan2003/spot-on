@@ -117,11 +117,16 @@ PAYMENT_FAILURE_RATE=1 docker compose up -d --wait payment-service
 docker compose up -d --wait payment-service          # back to the 20 % default
 ```
 
-Optional, expiry through the TTL queue (only reservations made after the restart use the new time):
+Optional, reminder and expiry through the TTL queues (only reservations made after the restart use the new time).
+Empty the two delay queues first: RabbitMQ only releases a delay queue's messages from its head, so 1-minute
+timers would wait behind the 15-minute ones left by earlier runs (the minute sweep would still catch them, late):
 
 ```bash
+docker compose exec rabbitmq rabbitmqctl purge_queue reservation.expiry-delay
+docker compose exec rabbitmq rabbitmqctl purge_queue reservation.reminder-delay
 RESERVATION_DURATION=1m docker compose up -d --wait reservation-service
-# reserve a spot, show reservation.expiry-delay holding one message; after a minute the spot frees itself
+# reserve a spot, show reservation.expiry-delay and reservation.reminder-delay holding one message each;
+# after 30 s the bell shows "held for you only until …", after a minute the spot frees itself
 docker compose up -d --wait reservation-service      # back to 15 minutes
 ```
 

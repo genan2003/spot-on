@@ -41,5 +41,7 @@ smartparking:
   reservation:
     # How long a reserved spot is held before it expires.
     duration: ${RESERVATION_DURATION:15m}
+    # The driver is reminded this long before the hold ends (at most half the hold time).
+    reminder-before: ${RESERVATION_REMINDER:5m}
     # Reservations expire on time through a TTL queue; this sweep is only the fallback.
     expiry-check: 1m

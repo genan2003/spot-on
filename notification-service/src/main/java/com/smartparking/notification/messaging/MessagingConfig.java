@@ -23,7 +23,7 @@ public class MessagingConfig {
 	/** Durable: while notification-service is down, events wait here and are delivered once it restarts. */
 	public static final String EVENTS_QUEUE = "notification.events";
 
-	static final List<String> ROUTING_KEYS = List.of("reservation.created", "reservation.changed", "reservation.cancelled", "reservation.expired",
+	static final List<String> ROUTING_KEYS = List.of("reservation.created", "reservation.changed", "reservation.expiring", "reservation.cancelled", "reservation.expired",
 			"session.completed", "payment.completed", "payment.failed");
 
 	/** JSON; each consumer reads the payload into its own record type, so no event classes are shared. */

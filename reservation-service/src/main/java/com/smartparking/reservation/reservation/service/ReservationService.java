@@ -6,6 +6,7 @@ import com.smartparking.reservation.event.ReservationCancelledEvent;
 import com.smartparking.reservation.event.ReservationChangedEvent;
 import com.smartparking.reservation.event.ReservationCreatedEvent;
 import com.smartparking.reservation.event.ReservationExpiredEvent;
+import com.smartparking.reservation.event.ReservationExpiringEvent;
 import com.smartparking.reservation.reservation.domain.CancelReason;
 import com.smartparking.reservation.reservation.domain.Reservation;
 import com.smartparking.reservation.reservation.domain.ReservationStatus;
@@ -40,16 +41,26 @@ public class ReservationService {
 	private final ApplicationEventPublisher eventPublisher;
 	private final Clock clock;
 	private final Duration reservationDuration;
+	private final Duration reminderLead;
 
 	public ReservationService(ReservationRepository reservationRepository, ParkingSessionRepository sessionRepository,
 			ParkingClient parkingClient, ApplicationEventPublisher eventPublisher, Clock clock,
-			@Value("${smartparking.reservation.duration}") Duration reservationDuration) {
+			@Value("${smartparking.reservation.duration}") Duration reservationDuration,
+			@Value("${smartparking.reservation.reminder-before}") Duration reminderBefore) {
 		this.reservationRepository = reservationRepository;
 		this.sessionRepository = sessionRepository;
 		this.parkingClient = parkingClient;
 		this.eventPublisher = eventPublisher;
 		this.clock = clock;
 		this.reservationDuration = reservationDuration;
+		// At most half the hold, so a short demo hold still gets its reminder.
+		Duration half = reservationDuration.dividedBy(2);
+		this.reminderLead = reminderBefore.compareTo(half) < 0 ? reminderBefore : half;
+	}
+
+	/** How long before the hold ends the driver is reminded. */
+	public Duration reminderLead() {
+		return reminderLead;
 	}
 
 	/**
@@ -162,6 +173,36 @@ public class ReservationService {
 				return true;
 			})
 			.orElse(false);
+	}
+
+	/**
+	 * Called when the reminder timer fires: publishes {@code reservation.expiring} if the hold really ends
+	 * within {@code lead} and the driver wasn't reminded about this expiry time yet. Returns whether it did.
+	 */
+	public boolean remindIfDue(UUID reservationId, Instant now) {
+		return reservationRepository.findById(reservationId)
+			.filter(reservation -> reservation.needsReminder(now, reminderLead))
+			.map(reservation -> remind(reservation, now))
+			.orElse(false);
+	}
+
+	/**
+	 * Fallback sweep for reminders, like {@link #expireOverdue}: reminds every active reservation that ends
+	 * within the lead and wasn't reminded yet, e.g. when its timer message is stuck behind older messages
+	 * with a longer TTL after the hold time was changed.
+	 */
+	public int remindDue(Instant now) {
+		List<Reservation> due = reservationRepository.findByStatusAndExpiresAtBefore(ReservationStatus.ACTIVE, now.plus(reminderLead))
+			.stream().filter(reservation -> reservation.needsReminder(now, reminderLead)).toList();
+		due.forEach(reservation -> remind(reservation, now));
+		return due.size();
+	}
+
+	private boolean remind(Reservation reservation, Instant now) {
+		reservation.markReminded();
+		Reservation reminded = reservationRepository.save(reservation);
+		eventPublisher.publishEvent(ReservationExpiringEvent.of(reminded, now));
+		return true;
 	}
 
 	/** When an active reservation's hold ends; empty if it has ended already. */

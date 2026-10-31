@@ -4,6 +4,7 @@ package com.smartparking.notification.notification.domain;
 public enum NotificationKind {
 	RESERVATION_CREATED,
 	RESERVATION_CHANGED,
+	RESERVATION_EXPIRING,
 	RESERVATION_CANCELLED,
 	RESERVATION_EXPIRED,
 	SESSION_COMPLETED,

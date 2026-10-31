@@ -37,6 +37,14 @@ public class MessagingConfig {
 
 	public static final String EXPIRY_QUEUE = "reservation.expiry";
 
+	/**
+	 * Second timer, for "expires soon" reminders. Its own delay queue, because every message in a delay queue
+	 * must have the same TTL to stay in order; it dead-letters through the same direct exchange.
+	 */
+	public static final String REMINDER_DELAY_QUEUE = "reservation.reminder-delay";
+
+	public static final String REMINDER_QUEUE = "reservation.reminders";
+
 	/** JSON; each consumer reads the payload into its own record type, so no event classes are shared. */
 	@Bean
 	MessageConverter messageConverter() {
@@ -73,7 +81,13 @@ public class MessagingConfig {
 			.build();
 		Queue expiryQueue = QueueBuilder.durable(EXPIRY_QUEUE).build();
 		Binding binding = BindingBuilder.bind(expiryQueue).to(expiryExchange).with(EXPIRY_QUEUE);
-		return new Declarables(expiryExchange, delayQueue, expiryQueue, binding);
+		Queue reminderDelayQueue = QueueBuilder.durable(REMINDER_DELAY_QUEUE)
+			.deadLetterExchange(EXPIRY_EXCHANGE)
+			.deadLetterRoutingKey(REMINDER_QUEUE)
+			.build();
+		Queue reminderQueue = QueueBuilder.durable(REMINDER_QUEUE).build();
+		Binding reminderBinding = BindingBuilder.bind(reminderQueue).to(expiryExchange).with(REMINDER_QUEUE);
+		return new Declarables(expiryExchange, delayQueue, expiryQueue, binding, reminderDelayQueue, reminderQueue, reminderBinding);
 	}
 
 }

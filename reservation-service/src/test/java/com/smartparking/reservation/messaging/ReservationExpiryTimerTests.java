@@ -15,6 +15,7 @@ import com.smartparking.reservation.reservation.domain.ReservationStatus;
 import com.smartparking.reservation.reservation.repository.ReservationRepository;
 import com.smartparking.reservation.reservation.service.ReservationService;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -52,6 +53,9 @@ class ReservationExpiryTimerTests {
 
 		Reservation reservation = reservationService.reserve("ttl-driver", spot);
 
+		// Halfway through the 2-second hold the driver is reminded, then the hold runs out.
+		String expiring = events.await("reservation.expiring", reservation.getId().toString());
+		assertThat(PublishedEvents.<String>read(expiring, "$.spotCode")).isEqualTo("T1");
 		await().atMost(Duration.ofSeconds(15)).until(() ->
 				reservationRepository.findById(reservation.getId()).orElseThrow().getStatus() == ReservationStatus.EXPIRED);
 		events.await("reservation.expired", reservation.getId().toString());
@@ -68,6 +72,11 @@ class ReservationExpiryTimerTests {
 		Reservation reservation = reservationService.reserve("extend-driver", spot);
 		reservationService.extend(reservation.getId());
 		events.await("reservation.changed", reservation.getId().toString());
+		// The first reminder (after 1 s) finds 3 s left and stays quiet; the one for the new end time comes after 3 s.
+		String expiring = events.await("reservation.expiring", reservation.getId().toString());
+		assertThat(Duration.ofNanos(System.nanoTime() - start)).isGreaterThanOrEqualTo(Duration.ofMillis(2500));
+		assertThat(Instant.parse(PublishedEvents.<String>read(expiring, "$.expiresAt")))
+			.isEqualTo(reservationRepository.findById(reservation.getId()).orElseThrow().getExpiresAt());
 
 		await().atMost(Duration.ofSeconds(20)).until(() ->
 				reservationRepository.findById(reservation.getId()).orElseThrow().getStatus() == ReservationStatus.EXPIRED);

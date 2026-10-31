@@ -7,8 +7,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Fallback sweep for overdue reservations. The TTL queue ({@code ReservationExpiryTimer}) normally
- * expires them on time; this catches any whose timer message was lost.
+ * Fallback sweep for overdue reservations and "expires soon" reminders. The TTL queues
+ * ({@code ReservationExpiryTimer}, {@code ReservationReminderTimer}) normally act on time; this catches any whose
+ * timer message was lost or is stuck behind older messages with a longer TTL (after the hold time changed).
  */
 @Slf4j
 @Component
@@ -23,6 +24,10 @@ public class ReservationExpirationScheduler {
 		int expired = reservationService.expireOverdue(clock.instant());
 		if (expired > 0) {
 			log.info("Expired {} reservation(s)", expired);
+		}
+		int reminded = reservationService.remindDue(clock.instant());
+		if (reminded > 0) {
+			log.info("Reminded {} driver(s) that their reservation expires soon", reminded);
 		}
 	}
 

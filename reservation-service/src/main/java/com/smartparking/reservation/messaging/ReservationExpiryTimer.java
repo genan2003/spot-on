@@ -24,6 +24,7 @@ public class ReservationExpiryTimer {
 
 	private final RabbitTemplate rabbitTemplate;
 	private final ReservationService reservationService;
+	private final ReservationReminderTimer reminderTimer;
 	private final Clock clock;
 
 	/** Starts the timer: the message becomes visible on the expiry queue when the hold time is over. */
@@ -59,6 +60,7 @@ public class ReservationExpiryTimer {
 			.ifPresent(expiresAt -> {
 				log.info("Reservation {} was extended; checking again at {}", check.reservationId(), expiresAt);
 				schedule(check.reservationId(), expiresAt);
+				reminderTimer.schedule(check.reservationId(), expiresAt);
 			});
 	}
 

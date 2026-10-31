@@ -58,6 +58,7 @@ Settings you may want to change for a demo. Set them in the shell when starting,
 | Variable | Service | Default | Effect |
 |---|---|---|---|
 | `RESERVATION_DURATION` | reservation-service | `15m` | How long a reserved spot is held |
+| `RESERVATION_REMINDER` | reservation-service | `5m` | How long before the hold ends the driver is reminded (at most half the hold) |
 | `PAYMENT_FAILURE_RATE` | payment-service | `0.2` | Share of simulated payments that fail (0 to 1) |
 | `NOTIFICATION_CHANNEL` | notification-service | `PUSH` | `EMAIL`, `SMS` or `PUSH` (all simulated in the logs) |
 
@@ -78,10 +79,14 @@ using the app:
 | `payment.session-completed` | payment-service | `session.completed` (charges the driver) |
 | `notification.events` | notification-service | reservation, session and payment events |
 | `reservation.expiry-delay` | — | one message per reservation (two if it was extended); when its TTL runs out it moves to `reservation.expiry` |
+| `reservation.reminder-delay` | — | the same for the "expires soon" reminder: TTL = hold time − 5 min, then `reservation.reminders` → `reservation.expiring` |
 
 To see a queue hold messages, stop a consumer (`docker compose stop notification-service`), reserve and
 cancel a spot, and start it again: the waiting events are delivered and the notifications appear.
-Set `RESERVATION_DURATION=1m` on reservation-service to watch a reservation expire through the TTL queue.
+Set `RESERVATION_DURATION=1m` on reservation-service to watch a reservation expire through the TTL queue; the
+reminder then arrives after 30 seconds. Purge `reservation.expiry-delay` and `reservation.reminder-delay` first
+(`docker compose exec rabbitmq rabbitmqctl purge_queue <name>`): a delay queue releases messages only from its
+head, so new 1-minute timers would wait behind 15-minute ones from earlier runs (the minute sweep catches them late).
 
 ## Develop one service
 

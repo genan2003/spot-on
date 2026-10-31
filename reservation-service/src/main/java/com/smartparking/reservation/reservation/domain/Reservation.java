@@ -23,6 +23,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Reservation {
 
+	/** A timer message may arrive a little early or late; within this (at most a quarter of the lead) it counts as on time. */
+	private static final Duration REMINDER_SLACK = Duration.ofSeconds(30);
+
 	/** Assigned before saving, because parking-service records it as the spot's hold before this row exists. */
 	@Id
 	private UUID id;
@@ -49,6 +52,12 @@ public class Reservation {
 	 * session. "My parking" shows the newest ended reservation or session, so it needs this time.
 	 */
 	private Instant endedAt;
+
+	/**
+	 * The expiry time the driver was last reminded about. A redelivered timer message doesn't remind twice,
+	 * and an extended reservation (new {@link #expiresAt}) gets a new reminder.
+	 */
+	private Instant remindedFor;
 
 	/** Set when the reservation is cancelled: by the driver, or because the spot was closed. */
 	@Enumerated(EnumType.STRING)
@@ -107,6 +116,20 @@ public class Reservation {
 		}
 		expiresAt = expiresAt.plus(by);
 		extended = true;
+	}
+
+	/**
+	 * Whether the "expires soon" reminder should go out now: still active, the hold ends within {@code lead}
+	 * (plus a little slack for a late timer), and this expiry time hasn't been reminded about yet.
+	 */
+	public boolean needsReminder(Instant now, Duration lead) {
+		Duration slack = lead.dividedBy(4).compareTo(REMINDER_SLACK) < 0 ? lead.dividedBy(4) : REMINDER_SLACK;
+		return isActive() && !isOverdue(now) && !expiresAt.equals(remindedFor)
+				&& !now.plus(lead).plus(slack).isBefore(expiresAt);
+	}
+
+	public void markReminded() {
+		remindedFor = expiresAt;
 	}
 
 	/** Only an active reservation whose hold time hasn't run out can be moved or extended. */

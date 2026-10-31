@@ -23,6 +23,7 @@ import com.smartparking.reservation.client.ParkingServiceUnavailableException;
 import com.smartparking.reservation.client.SpotConflictException;
 import com.smartparking.reservation.messaging.MessagingConfig;
 import com.smartparking.reservation.pricing.PricingRule;
+import com.smartparking.reservation.reservation.repository.ReservationRepository;
 import com.smartparking.reservation.reservation.service.ReservationService;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -57,6 +58,9 @@ class ReservationFlowIntegrationTests {
 
 	@Autowired
 	private ReservationService reservationService;
+
+	@Autowired
+	private ReservationRepository reservationRepository;
 
 	@MockitoBean
 	private ParkingClient parkingClient;
@@ -215,6 +219,20 @@ class ReservationFlowIntegrationTests {
 		// Rejected before asking parking-service (the one call is the original reservation), so nothing to give back.
 		verify(parkingClient, times(1)).reserveSpot(any(), any(), eq(UUID.fromString(reservationId)));
 		verify(parkingClient, never()).releaseSpotIfHeld(any(), any());
+	}
+
+	@Test
+	void theSweepRemindsWhenTheTimerMessageIsLate() throws Exception {
+		String reservationId = id(reserve(spot, driver));
+		Instant elevenMinutesLater = Instant.now().plus(Duration.ofMinutes(11));
+
+		reservationService.remindDue(elevenMinutesLater);
+
+		String expiring = events.await("reservation.expiring", reservationId);
+		assertThat(PublishedEvents.<String>read(expiring, "$.spotCode")).isEqualTo("A1");
+		// Reminded once per expiry time: the next sweep leaves it alone.
+		assertThat(reservationRepository.findById(UUID.fromString(reservationId)).orElseThrow()
+			.needsReminder(elevenMinutesLater, reservationService.reminderLead())).isFalse();
 	}
 
 	@Test

@@ -184,10 +184,25 @@ function activeSession(): ParkingSession | undefined {
   return sessions.find((s) => s.status === 'ACTIVE')
 }
 
-// Expiration sweeper, like the backend's TTL queue / @Scheduled fallback.
+// Reminder lead, like reservation-service: 5 minutes, at most half the hold time.
+const REMINDER_MS = Math.min(5, RESERVATION_MINUTES / 2) * 60_000
+// "reservationId@expiresAt" already reminded, so an extended reservation is reminded again.
+const reminded = new Set<string>()
+
+// Expiration sweeper, like the backend's TTL queues / @Scheduled fallback.
 setInterval(() => {
   const now = Date.now()
   for (const reservation of reservations) {
+    const left = new Date(reservation.expiresAt).getTime() - now
+    const key = `${reservation.id}@${reservation.expiresAt}`
+    if (reservation.status === 'ACTIVE' && left > 0 && left <= REMINDER_MS && !reminded.has(key)) {
+      reminded.add(key)
+      const location = findLocation(reservation.locationId)
+      notify(
+        'RESERVATION_EXPIRING',
+        `${reservation.spotCode} at ${location.name} is held for you only until ${timeOfDay(reservation.expiresAt)}. Start your session or extend the hold before then.`,
+      )
+    }
     if (reservation.status === 'ACTIVE' && new Date(reservation.expiresAt).getTime() <= now) {
       reservation.status = 'EXPIRED'
       reservation.endedAt = reservation.expiresAt
