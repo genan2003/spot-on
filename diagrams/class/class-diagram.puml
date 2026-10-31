@@ -630,6 +630,8 @@ Factory: NotificationChannelFactory.create(type)
 Product: NotificationChannel
 Concrete products: Email, Sms, Push (simulated)
 Client: NotificationEventListener
+Product chosen by Driver.preferredChannel
+(in notification-service: NotificationPreference)
 end note
 NChannelFactory .. NotificationChannelFactory
 NChannelFactory .. NotificationChannel

@@ -145,6 +145,15 @@ export interface CurrentParking {
   lastEndedReservation?: Reservation
 }
 
+/** How notifications reach the driver; all three are simulated in notification-service's logs. */
+export type NotificationChannel = 'PUSH' | 'SMS' | 'EMAIL'
+
+/** The driver's chosen channel (notification-service's Factory picks the channel from it). */
+export interface NotificationPreference {
+  driverId: string
+  channel: NotificationChannel
+}
+
 export interface Notification {
   id: string
   kind:
@@ -156,6 +165,7 @@ export interface Notification {
     | 'SESSION_COMPLETED'
     | 'PAYMENT_COMPLETED'
     | 'PAYMENT_FAILED'
+  channelType: NotificationChannel
   message: string
   sentAt: string
 }

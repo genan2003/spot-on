@@ -1703,6 +1703,7 @@
                   "    const kinds = pm.response.json().map(n => n.kind);",
                   "    const times = pm.response.json().map(n => new Date(n.sentAt).getTime());\n    pm.test('Newest first', () => pm.expect(times).to.eql([...times].sort((a, b) => b - a)));",
                   "    pm.test('One per event, no duplicates', () => pm.expect(kinds.filter(k => k === 'SESSION_COMPLETED')).to.have.lengthOf(1));",
+                  "    pm.test('Each one names the channel it went out on', () => pm.response.json().forEach(n => pm.expect(['PUSH', 'SMS', 'EMAIL']).to.include(n.channelType)));",
                   "}"
                 ]
               }
@@ -1711,6 +1712,85 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/notifications?driverId={{driverId}}"
+          }
+        },
+        {
+          "name": "Notification channel (new driver: the default)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const channel = pm.response.json().channel;",
+                  "pm.test('One of the simulated channels (NOTIFICATION_CHANNEL, PUSH unless set)', () => pm.expect(['PUSH', 'SMS', 'EMAIL']).to.include(channel));",
+                  "pm.collectionVariables.set('defaultChannel', channel);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/notification-preferences/{{driverId}}"
+          }
+        },
+        {
+          "name": "Choose SMS (Factory picks SmsNotificationChannel)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Next notifications go out by SMS', () => pm.expect(pm.response.json().channel).to.eql('SMS'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/notification-preferences/{{driverId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"SMS\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Unknown notification channel is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Problem detail', () => pm.expect(pm.response.json()).to.have.property('status', 400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/notification-preferences/{{driverId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"PIGEON\"\n}"
+            }
           }
         }
       ]

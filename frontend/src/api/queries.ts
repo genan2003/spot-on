@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from './client'
 import { subscribeToNotifications, subscribeToSpotStatus } from './live'
-import type { CurrentParking, History, NewLocation, PaymentMethod, PaymentStatus, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
+import type { CurrentParking, History, NewLocation, NotificationChannel, PaymentMethod, PaymentStatus, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
 
 export const keys = {
   locations: ['locations'] as const,
@@ -12,6 +12,7 @@ export const keys = {
   notifications: ['notifications'] as const,
   history: ['history'] as const,
   paymentAccount: ['payment-account'] as const,
+  notificationPreference: ['notification-preference'] as const,
   payment: (id: string) => ['payments', id] as const,
 }
 
@@ -74,6 +75,18 @@ export const useHistory = () =>
     },
     refetchInterval: (query) => (query.state.data?.sessions.some((s) => s.paymentStatus === 'PENDING') ? 3000 : false),
   })
+
+/** The channel the driver's notifications go out on. */
+export const useNotificationPreference = () =>
+  useQuery({ queryKey: keys.notificationPreference, queryFn: api.getNotificationPreference })
+
+export function useChooseNotificationChannel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (channel: NotificationChannel) => api.chooseNotificationChannel(channel),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: keys.notificationPreference }),
+  })
+}
 
 /** Loaded once; new ones arrive live (useLiveNotifications), so no polling. */
 export const useNotifications = () => useQuery({ queryKey: keys.notifications, queryFn: api.listNotifications })

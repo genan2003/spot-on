@@ -5,6 +5,8 @@ import type {
   NewLocation,
   NewSpots,
   Notification,
+  NotificationChannel,
+  NotificationPreference,
   ParkingLocation,
   ParkingSession,
   Payment,
@@ -90,6 +92,9 @@ export interface Api {
   /** Simulated: adds money to the wallet. */
   topUpWallet(amount: number): Promise<PaymentAccount>
   listNotifications(): Promise<Notification[]>
+  getNotificationPreference(): Promise<NotificationPreference>
+  /** Push, SMS or email for the next notifications. */
+  chooseNotificationChannel(channel: NotificationChannel): Promise<NotificationPreference>
   /** The driver's last 50 reservations, newest first. */
   listReservations(): Promise<Reservation[]>
   /** The driver's last 50 sessions, newest first. */
@@ -128,6 +133,8 @@ const httpApi: Api = {
   choosePaymentMethod: (method) => request(`/payment-accounts/${DRIVER_ID}`, json('PATCH', { preferredMethod: method })),
   topUpWallet: (amount) => request(`/payment-accounts/${DRIVER_ID}/top-ups`, json('POST', { amount })),
   listNotifications: () => request(`/notifications?driverId=${DRIVER_ID}`),
+  getNotificationPreference: () => request(`/notification-preferences/${DRIVER_ID}`),
+  chooseNotificationChannel: (channel) => request(`/notification-preferences/${DRIVER_ID}`, json('PATCH', { channel })),
   listReservations: () => request(`/reservations?driverId=${DRIVER_ID}`),
   listSessions: () => request(`/parking-sessions?driverId=${DRIVER_ID}`),
   listPayments: () => request(`/payments?driverId=${DRIVER_ID}`),

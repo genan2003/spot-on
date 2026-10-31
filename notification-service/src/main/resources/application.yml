@@ -47,5 +47,6 @@ management:
 
 smartparking:
   notification:
-    # Channel used for every notification (EMAIL, SMS or PUSH; all simulated with logs).
-    channel: ${NOTIFICATION_CHANNEL:PUSH}
+    # Channel for drivers who haven't chosen one (EMAIL, SMS or PUSH; all simulated with logs).
+    # A driver's own choice (PATCH /api/v1/notification-preferences/{driverId}) wins.
+    default-channel: ${NOTIFICATION_CHANNEL:PUSH}

@@ -62,7 +62,7 @@ Settings you may want to change for a demo. Set them in the shell when starting,
 | `RESERVATION_REMINDER` | reservation-service | `5m` | How long before the hold ends the driver is reminded (at most half the hold) |
 | `PAYMENT_FAILURE_RATE` | payment-service | `0.2` | Share of simulated card payments that fail (0 to 1); the wallet fails only when its balance is too low |
 | `WALLET_STARTING_BALANCE` | payment-service | `25.00` | Simulated wallet balance of a new driver (lei) |
-| `NOTIFICATION_CHANNEL` | notification-service | `PUSH` | `EMAIL`, `SMS` or `PUSH` (all simulated in the logs) |
+| `NOTIFICATION_CHANNEL` | notification-service | `PUSH` | Channel for drivers who haven't chosen one: `EMAIL`, `SMS` or `PUSH` (all simulated in the logs); a driver's own choice on the Notifications page wins |
 | `RESERVATION_RATE_LIMIT` | gateway | `5` | Reservation attempts per driver in a row; then one every 60 / n seconds (429 with `Retry-After`) |
 | `PARKING_CIRCUIT_OPEN_FOR` | reservation-service | `30s` | How long the circuit breaker to parking-service stays open after repeated failures |
 

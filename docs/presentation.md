@@ -35,7 +35,7 @@ test names on the "proof of concept" slide.
 
 | Question | Short answer | Who |
 |---|---|---|
-| Why is Factory here a pattern and not just `new`? | Callers depend only on the interface; the choice depends on a runtime value (method, channel). It is a simple factory, not GoF Factory Method, and we say so. In the microservices the value is the driver's choice ("Pay with" in the app, stored in payment-service), and a retry can switch it ("Pay by card instead"). | C |
+| Why is Factory here a pattern and not just `new`? | Callers depend only on the interface; the choice depends on a runtime value (method, channel). It is a simple factory, not GoF Factory Method, and we say so. In the microservices the value is the driver's choice ("Pay with" in the app, stored in payment-service; "Send notifications by" on the Notifications page, stored in notification-service), and a retry can switch it ("Pay by card instead"). | C |
 | What if two drivers reserve the same spot at the same moment? | State rejects a reserved spot; if both read it as free, `@Version` or the unique index fails the second commit and it gets 409. Proven by the 10-thread test. | B |
 | Why not just an `if` on the spot status? | The same checks would be repeated across services; one missing check is a bug. State keeps each rule in one class, matching the transition table. | B |
 | Why are notifications sent only after the commit? | So a driver is never told about a reservation that was rolled back. | C |
@@ -155,6 +155,14 @@ Park on a spot, choose "Pay with: Wallet" (25 lei) and end the session on a stay
 the receipt says the wallet doesn't have enough money and offers "Pay by card instead" or "Add 50 lei".
 Add 50 lei, "Try payment again": "Paid from your wallet". payment-service's log shows [WALLET], then [CARD]
 for a card payment: the same PaymentService, a different product from PaymentProcessorFactory.
+```
+
+Optional, Factory in the UI (notification channel):
+
+```text
+On Notifications, choose "Send notifications by: SMS", then reserve a spot. The new notification says
+"by SMS" and notification-service's log shows [SMS to driver-1]; the older ones still say how they went out.
+Same NotificationService, a different product from NotificationChannelFactory.
 ```
 
 Optional, failed payment (put it back afterwards):

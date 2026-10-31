@@ -12,6 +12,7 @@ import { ApiError } from './errors'
 import type {
   CurrentParking,
   Notification,
+  NotificationPreference,
   ParkingLocation,
   ParkingSession,
   Payment,
@@ -114,6 +115,8 @@ const payments: Payment[] = []
 const account: PaymentAccount = { driverId: DRIVER_ID, preferredMethod: 'CARD', walletBalance: 25 }
 const money = (amount: number) => Math.round(amount * 100) / 100
 const notifications: Notification[] = []
+// Like notification-service: push until the driver chooses another channel.
+const notificationPreference: NotificationPreference = { driverId: DRIVER_ID, channel: 'PUSH' }
 
 /** A few past visits of the demo driver, so the history page has something to show. */
 function seedHistory() {
@@ -204,7 +207,13 @@ const notificationListeners = new Set<(notification: Notification) => void>()
 
 /** Like notification-service: saves it, then pushes it to the open app (Server-Sent Events). */
 function notify(kind: Notification['kind'], message: string) {
-  const notification: Notification = { id: crypto.randomUUID(), kind, message, sentAt: new Date().toISOString() }
+  const notification: Notification = {
+    id: crypto.randomUUID(),
+    kind,
+    channelType: notificationPreference.channel,
+    message,
+    sentAt: new Date().toISOString(),
+  }
   notifications.unshift(notification)
   notificationListeners.forEach((listener) => listener(structuredClone(notification)))
 }
@@ -606,6 +615,12 @@ export const mockApi: Api = {
     }),
 
   listNotifications: () => delay(() => notifications),
+  getNotificationPreference: () => delay(() => ({ ...notificationPreference })),
+  chooseNotificationChannel: (channel) =>
+    delay(() => {
+      notificationPreference.channel = channel
+      return { ...notificationPreference }
+    }),
   listReservations: () => delay(() => [...reservations].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50)),
   listSessions: () => delay(() => [...sessions].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 50)),
   listPayments: () => delay(() => payments),
