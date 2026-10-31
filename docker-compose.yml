@@ -125,6 +125,8 @@ services:
       PAYMENT_SERVICE_URL: http://payment-service:8083
       NOTIFICATION_SERVICE_URL: http://notification-service:8084
       ZIPKIN_URL: http://zipkin:9411
+      # Reservation attempts a driver may make in a row (then one every minute / this number).
+      RESERVATION_RATE_LIMIT: ${RESERVATION_RATE_LIMIT:-5}
     ports:
       - "8080:8080"
     depends_on:

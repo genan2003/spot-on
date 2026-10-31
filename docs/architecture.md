@@ -82,7 +82,7 @@ This is what Stage 2 builds (`docker-compose.yml`). Five deployables, each with 
 
 | Service | Owns | Synchronous API (via the gateway) | Publishes | Consumes |
 |---|---|---|---|---|
-| gateway | — | Routes `/api/v1/**`, `/ws` | — | — |
+| gateway | — | Routes `/api/v1/**`, `/ws`; rate-limits reserving per driver | — | — |
 | parking-service | `parking_db` | Locations, spots, pricing rules, availability; STOMP `/topic/spot-status` | `spot.status-changed`, `spot.closed` | `reservation.cancelled`, `reservation.expired`, `reservation.changed`, `session.completed` |
 | reservation-service | `reservation_db` | Reservations, sessions | `reservation.*` (incl. `reservation.expiring` reminders), `session.started`, `session.completed` | `payment.*`, `spot.closed` |
 | payment-service | `payment_db` | Payments | `payment.completed`, `payment.failed` | `session.completed` |
@@ -110,7 +110,8 @@ HTTP request and RabbitMQ message, so one driver action is one trace across all 
 
 **Reserving a spot.**
 
-1. The gateway routes `POST /reservations` to reservation-service.
+1. The gateway checks the driver's rate limit (5 attempts in a row, then one every 12 s; otherwise
+   `429` with `Retry-After`) and routes `POST /reservations` to reservation-service.
 2. reservation-service calls parking-service to reserve the spot, naming the new reservation's id
    as the spot's hold. parking-service applies the State pattern and its `@Version` check in
    `parking_db`, answers `409` if the spot isn't free, and publishes `spot.status-changed`, which

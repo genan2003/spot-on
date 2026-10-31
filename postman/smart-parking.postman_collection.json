@@ -37,6 +37,61 @@
             "method": "GET",
             "url": "{{baseUrl}}/actuator/health"
           }
+        },
+        {
+          "name": "Too many reservation attempts are refused",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The gateway allows a few reservation attempts per driver in a row (5 per minute by default).",
+                  "// A fresh driver makes 10 attempts on spots that don't exist (404, nothing is reserved),",
+                  "// so this request is over the limit whatever the configured number up to 10.",
+                  "const driver = 'rate-limit-' + Date.now();",
+                  "pm.variables.set('rateLimitDriverId', driver);",
+                  "for (let i = 0; i < 10; i++) {",
+                  "  pm.sendRequest({",
+                  "    url: pm.environment.get('baseUrl') + '/api/v1/reservations',",
+                  "    method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json', 'X-Driver-Id': driver },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({ spotId: '00000000-0000-0000-0000-' + String(i).padStart(12, '0'), driverId: driver }) }",
+                  "  }, () => {});",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 429 Too Many Requests', () => pm.response.to.have.status(429));",
+                  "pm.test('Retry-After says when to try again', () => pm.expect(Number(pm.response.headers.get('Retry-After'))).to.be.above(0));",
+                  "pm.test('No tokens left', () => pm.expect(pm.response.headers.get('X-RateLimit-Remaining')).to.eql('0'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/reservations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{rateLimitDriverId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"00000000-0000-0000-0000-000000000099\",\n  \"driverId\": \"{{rateLimitDriverId}}\"\n}"
+            }
+          }
         }
       ]
     },
@@ -508,6 +563,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
               }
             ],
             "body": {
@@ -537,6 +596,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{otherDriverId}}"
               }
             ],
             "body": {
@@ -744,6 +807,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
               }
             ],
             "body": {
@@ -1308,6 +1375,10 @@
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "X-Driver-Id",
+                "value": "{{driverId}}"
               }
             ],
             "body": {

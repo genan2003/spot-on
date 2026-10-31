@@ -19,6 +19,18 @@ spring:
               uri: ${PARKING_SERVICE_URL:http://localhost:8081}
               predicates:
                 - Path=/ws/**
+            # Reserving is rate-limited per driver (RateLimitConfig): 429 + Retry-After when a driver tries too often.
+            # Listed before reservation-service, so it takes POST /api/v1/reservations; everything else goes on below.
+            - id: reserve-spot
+              uri: ${RESERVATION_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/reservations
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    rate-limiter: "#{@reservationRateLimiter}"
+                    key-resolver: "#{@driverKeyResolver}"
             - id: reservation-service
               uri: ${RESERVATION_SERVICE_URL:http://localhost:8082}
               predicates:
@@ -44,3 +56,10 @@ management:
     web:
       exposure:
         include: health,info
+
+smartparking:
+  rate-limit:
+    reservations:
+      # Each driver may try to reserve this many times in a row, then once every period / requests.
+      requests: ${RESERVATION_RATE_LIMIT:5}
+      period: 1m

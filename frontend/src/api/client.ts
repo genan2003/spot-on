@@ -17,7 +17,13 @@ import type {
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === 'true'
 
 // Used when a service sends no ProblemDetail (e.g. an endpoint that doesn't exist yet).
-function fallbackMessage(status: number): string {
+function fallbackMessage(status: number, retryAfter: string | null): string {
+  // The gateway's rate limit answers 429 with no body; Retry-After says when the next attempt is allowed.
+  if (status === 429) {
+    const seconds = Number(retryAfter)
+    const wait = seconds > 0 ? `Wait ${seconds} ${seconds === 1 ? 'second' : 'seconds'}` : 'Wait a moment'
+    return `You tried to reserve too many times in a row. ${wait}, then try again.`
+  }
   if (status === 404) return 'Spot On couldn’t find this. It may have been removed, or this part isn’t available yet.'
   if (status >= 500) return 'Something went wrong on the server. Try again in a moment.'
   return 'Spot On couldn’t complete that request. Try again.'
@@ -35,7 +41,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     const problem = await response.json().catch(() => null)
-    throw new ApiError(response.status, problem?.detail ?? fallbackMessage(response.status))
+    throw new ApiError(
+      response.status,
+      problem?.detail ?? fallbackMessage(response.status, response.headers.get('Retry-After')),
+    )
   }
   return response.status === 204 ? (undefined as T) : response.json()
 }
