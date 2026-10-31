@@ -58,11 +58,14 @@ class ParkingApiIntegrationTests {
 			.andExpect(jsonPath("$[1].code").value("A5"));
 
 		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
-				{"strategy":"TIERED","firstHourRate":8,"laterHourRate":4,"hourlyRate":99}""")
+				{"strategy":"TIERED","bands":[{"fromHour":0,"hourlyRate":8},{"fromHour":1,"hourlyRate":4}],"hourlyRate":99}""")
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.pricing.strategy").value("TIERED"))
-			.andExpect(jsonPath("$.pricing.laterHourRate").value(4))
+			.andExpect(jsonPath("$.pricing.bands.length()").value(2))
+			.andExpect(jsonPath("$.pricing.bands[1].hourlyRate").value(4))
 			.andExpect(jsonPath("$.pricing.hourlyRate").doesNotExist())
+			.andExpect(jsonPath("$.pricing.billingIncrementMinutes").value(60))
+			.andExpect(jsonPath("$.pricing.gracePeriodMinutes").value(0))
 			.andExpect(jsonPath("$.totalSpots").value(5))
 			.andExpect(jsonPath("$.freeSpots").value(5));
 
@@ -77,7 +80,45 @@ class ParkingApiIntegrationTests {
 	void pricingRuleWithAMissingRateIsRejected() throws Exception {
 		String locationId = createLocation("Rate check");
 		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
-				{"strategy":"TIERED","firstHourRate":8}""")
+				{"strategy":"NIGHT_WEEKEND","dayRate":8}""")
+			.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void pricingExtrasAreStoredWithTheRule() throws Exception {
+		String locationId = createLocation("Extras");
+		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
+				{"strategy":"NIGHT_WEEKEND","dayRate":6,"nightWeekendRate":2,"nightStart":"22:00","nightEnd":"06:30",
+				 "billingIncrementMinutes":15,"gracePeriodMinutes":10,"dailyCap":40,
+				 "surcharges":{"compact":-10,"large":20,"motorcycle":-50,"evCharging":15}}""")
+			.andExpect(status().isOk());
+
+		mvc.perform(get("/api/v1/parking-locations/{id}", locationId))
+			.andExpect(jsonPath("$.pricing.nightStart").value("22:00"))
+			.andExpect(jsonPath("$.pricing.nightEnd").value("06:30"))
+			.andExpect(jsonPath("$.pricing.billingIncrementMinutes").value(15))
+			.andExpect(jsonPath("$.pricing.gracePeriodMinutes").value(10))
+			.andExpect(jsonPath("$.pricing.dailyCap").value(40))
+			.andExpect(jsonPath("$.pricing.surcharges.large").value(20))
+			.andExpect(jsonPath("$.pricing.surcharges.motorcycle").value(-50))
+			.andExpect(jsonPath("$.pricing.bands").doesNotExist());
+	}
+
+	@Test
+	void pricingRulesThatMakeNoSenseAreRejected() throws Exception {
+		String locationId = createLocation("Bad rules");
+		// Bands must start at hour 0, in order.
+		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
+				{"strategy":"TIERED","bands":[{"fromHour":1,"hourlyRate":4}]}""")
+			.andExpect(status().isBadRequest());
+		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
+				{"strategy":"TIERED","bands":[{"fromHour":0,"hourlyRate":8},{"fromHour":0,"hourlyRate":4}]}""")
+			.andExpect(status().isBadRequest());
+		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
+				{"strategy":"HOURLY","hourlyRate":6,"billingIncrementMinutes":7}""")
+			.andExpect(status().isBadRequest());
+		send(put("/api/v1/parking-locations/{id}/pricing-rule", locationId), """
+				{"strategy":"HOURLY","hourlyRate":6,"surcharges":{"compact":0,"large":500,"motorcycle":0,"evCharging":0}}""")
 			.andExpect(status().isBadRequest());
 	}
 
@@ -118,7 +159,10 @@ class ParkingApiIntegrationTests {
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.detail").value("Spot C1 is reserved by another driver."));
 
-		hold(spotId, "occupy", "driver-1", session).andExpect(jsonPath("$.status").value("OCCUPIED"));
+		hold(spotId, "occupy", "driver-1", session)
+			.andExpect(jsonPath("$.status").value("OCCUPIED"))
+			.andExpect(jsonPath("$.type").value("STANDARD"))
+			.andExpect(jsonPath("$.evCharging").value(false));
 		mvc.perform(delete("/api/v1/parking-locations/{id}", locationId)).andExpect(status().isConflict());
 
 		// The session is the hold now: releasing the old reservation must not free the parked car.

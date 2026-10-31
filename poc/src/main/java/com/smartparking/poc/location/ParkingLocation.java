@@ -54,8 +54,9 @@ public class ParkingLocation {
         this.pricingRule = pricingRule;
     }
 
-    public PricingStrategy getPricingStrategy() {
-        return pricingRule.toStrategy();
+    /** Strategy + Decorator: the rule's strategy, wrapped in its extras for this spot's type and charger. */
+    public PricingStrategy getPricingStrategy(ParkingSpot spot) {
+        return pricingRule.toStrategy(spot.getType(), spot.isEvCharging());
     }
 
     public void changePricingRule(PricingRule pricingRule) {

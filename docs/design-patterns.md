@@ -1,6 +1,6 @@
 # Design patterns (exercises 1–2)
 
-This document lists the domain model of the Smart Parking Management System and the five design
+This document lists the domain model of the Smart Parking Management System and the six design
 patterns the system is built on. For each pattern it explains the concrete problem in this project,
 how the pattern solves it, and why it is better than the simpler alternative.
 
@@ -14,7 +14,9 @@ and in the proof of concept (`poc/`). If one of the three changes, update the ot
 | `ParkingLocation` | A car park managed by an administrator | `id`, `name`, `address`, `latitude`, `longitude`, `pricingRule`, `spots` |
 | `ParkingSpot` | One bay in a location | `id`, `code` (e.g. `B4`), `level`, `zone`, `type`, `evCharging`, `accessible`, `state`, `version` |
 | `SpotType` (enum) | Size category of a spot | `STANDARD`, `COMPACT`, `LARGE`, `MOTORCYCLE` |
-| `PricingRule` | The pricing an administrator configured for a location: which strategy, with which rates | `strategyType`, `hourlyRate`, `flatRate`, `firstHourRate`, `laterHourRate`, `dayRate`, `nightWeekendRate` |
+| `PricingRule` | The pricing an administrator configured for a location: which strategy, with which rates, plus extras for any strategy | `strategyType`, `hourlyRate`, `flatRate`, `bands`, `dayRate`, `nightWeekendRate`, `nightStart`, `nightEnd`, `billingIncrementMinutes`, `gracePeriodMinutes`, `dailyCap`, `surcharges` |
+| `PriceBand` | One band of a tiered rule: from hour N of the stay on, each hour costs this much | `fromHour`, `hourlyRate` |
+| `BaySurcharges` | Percent added (or taken off) per spot type and for EV charging | `compact`, `large`, `motorcycle`, `evCharging` |
 | `User` (abstract) | Someone who uses the system | `id`, `name`, `email` |
 | `Driver` | Finds, reserves and pays for spots | `phone`, `preferredChannel`, `preferredPaymentMethod` |
 | `Admin` | Manages locations, spots and pricing | — |
@@ -49,6 +51,7 @@ Application layer (also in the class diagram):
 | Pattern | Kind | Where | Problem it solves |
 |---|---|---|---|
 | Strategy | Behavioural | Pricing | Each location charges differently, and the rule can change at runtime |
+| Decorator | Structural | Pricing extras | Optional extras (billing blocks, grace period, daily maximum, surcharges) combine freely with every pricing rule |
 | State | Behavioural | Spot lifecycle | Which actions are allowed depends on the spot's current status |
 | Observer | Behavioural | Domain events | Many parts of the system react to reservations, sessions and payments |
 | Factory | Creational | Payments, notifications | Picking the right processor or channel for a payment method or driver preference |
@@ -63,11 +66,16 @@ Application layer (also in the class diagram):
 Every location sets its own pricing, and the admin can change it at any time. The system supports
 four rules:
 
-- **Hourly:** every started hour costs the same.
+- **Hourly:** every hour costs the same.
 - **Flat rate:** one price per visit, however long.
-- **Tiered:** the first hour has its own price, then every later started hour costs a second price.
-- **Night and weekend:** an hourly day rate, and a different hourly rate when the session starts
-  between 20:00 and 08:00 or on a weekend.
+- **Tiered:** the hourly price changes as the stay gets longer, in bands (for example 8 lei for the
+  first hour, 4 lei up to hour 4, then 2 lei).
+- **Night and weekend:** an hourly day rate, and a different hourly rate at night (hours set by the
+  admin, 20:00–08:00 by default) and on weekends. Each part of the stay is charged at the rate for
+  the time it falls in.
+
+Each strategy charges for the exact time it is given. Rounding up to whole blocks ("every started
+hour") and the other extras are decorators around it (see Decorator).
 
 The cost of a session must be computed by the rule of its location, and new rules (for example an
 event-day rate) should not require changing the code that ends a session.
@@ -78,7 +86,7 @@ event-day rate) should not require changing the code that ends a session.
 |---|---|
 | Strategy (interface) | `PricingStrategy` with `BigDecimal calculateCost(Instant entryTime, Instant exitTime)` |
 | Concrete strategies | `HourlyPricingStrategy`, `FlatRatePricingStrategy`, `TieredPricingStrategy`, `NightWeekendPricingStrategy` |
-| Context | `ParkingLocation`, which exposes `getPricingStrategy()` built from its `PricingRule` |
+| Context | `ParkingLocation`, which exposes `getPricingStrategy(spot)` built from its `PricingRule` |
 | Client | `ParkingSessionFacade`, which asks the location's strategy for the cost when a session ends |
 
 Each concrete strategy keeps its own rates as fields and contains only its own formula.
@@ -86,7 +94,7 @@ Each concrete strategy keeps its own rates as fields and contains only its own f
 strategy object, so the database stores plain values while the code works with behaviour.
 
 ```java
-BigDecimal cost = location.getPricingStrategy().calculateCost(session.getEntryTime(), exitTime);
+BigDecimal cost = location.getPricingStrategy(spot).calculateCost(session.getEntryTime(), exitTime);
 ```
 
 ### Why not a simpler alternative
@@ -101,6 +109,69 @@ The simple version is one `calculateCost` method with a `switch` on a `pricingTy
   strategy. They don't pile up as nullable fields that every branch has to check.
 - **Switching rules:** an admin changing a location from hourly to tiered just swaps the strategy
   object; no caller changes.
+
+---
+
+## Decorator: pricing extras
+
+### Problem
+
+On top of its rule, a car park can switch on extras, and they apply to every rule:
+
+- **Billing blocks:** the stay is charged in whole blocks of 15, 30 or 60 minutes (60 by default,
+  so every started hour counts).
+- **Bay surcharge:** a percentage added for a kind of bay (for example +20% for a large bay, +15%
+  for EV charging), or taken off when negative (a cheaper motorcycle bay).
+- **Daily maximum:** a driver never pays more than this for each started 24 hours.
+- **Grace period:** a driver who leaves within N minutes pays nothing.
+
+Any combination is possible, with any of the four strategies, and the admin can change it at any time.
+
+### Solution
+
+| Role | Class |
+|---|---|
+| Component (interface) | `PricingStrategy`, the same interface the strategies implement |
+| Concrete components | The four pricing strategies |
+| Decorator | `PricingDecorator` (abstract): implements `PricingStrategy` and holds the `inner` strategy it wraps |
+| Concrete decorators | `BillingIncrementDecorator`, `BaySurchargeDecorator`, `DailyCapDecorator`, `GracePeriodDecorator` |
+| Builder of the chain | `PricingRule.toStrategy(spotType, evCharging)` |
+
+Each decorator does one thing before or after calling the strategy it wraps: `BillingIncrementDecorator`
+rounds the exit time up before calling it, `BaySurchargeDecorator` multiplies its result,
+`DailyCapDecorator` caps it, `GracePeriodDecorator` returns 0 without calling it at all for a short stay.
+`PricingRule.toStrategy` always wraps them in the same order, from the inside out: billing blocks,
+surcharge, daily maximum, grace period. The daily maximum includes the surcharge, and a short enough
+stay is free whatever the rest says.
+
+```java
+PricingStrategy pricing = new GracePeriodDecorator(
+        new DailyCapDecorator(
+            new BaySurchargeDecorator(
+                new BillingIncrementDecorator(new TieredPricingStrategy(bands), Duration.ofMinutes(15)),
+                20),
+            new BigDecimal("30.00")),
+        Duration.ofMinutes(10));
+```
+
+The facade still sees one `PricingStrategy` and calls `calculateCost`; it can't tell a plain strategy
+from a decorated one.
+
+### Why not a simpler alternative
+
+The simple version adds `if` blocks for each extra to every strategy, or a subclass per combination.
+
+- **Combinations:** four extras that can each be on or off give 16 combinations per strategy, 64 in
+  all. Subclasses for each would explode; decorators are four classes that stack.
+- **No duplication:** with `if` blocks, every strategy repeats the rounding, cap and grace-period
+  code. Each decorator has it once, and the strategies keep only their own formula.
+- **Order is explicit:** "cap after surcharge, grace period over everything" is the order of the
+  wrapping in one method, not hidden in the order of `if` statements in four places.
+- **Testing:** each decorator is tested on top of a fixed hourly strategy, and one test checks the
+  order of the chain.
+
+Strategy and Decorator work together: Strategy picks *how* time turns into money, Decorator adds
+*extras* around whichever strategy was picked.
 
 ---
 
@@ -297,12 +368,12 @@ The simple version is a controller that calls each repository and service itself
 
 ## How the patterns work together
 
-Ending a session shows all five patterns in one call:
+Ending a session shows all six patterns in one call:
 
 ```
 ParkingSessionController
   └─ ParkingSessionFacade.endSession(sessionId)                Facade
-       ├─ location.getPricingStrategy().calculateCost(...)      Strategy
+       ├─ location.getPricingStrategy(spot).calculateCost(...)  Strategy + Decorator
        ├─ paymentProcessorFactory.create(method).process(...)   Factory
        ├─ spot.release()  → OccupiedState → AvailableState      State
        └─ publish(SessionCompletedEvent)                        Observer
@@ -318,6 +389,7 @@ Observer (`ReservationCreatedEvent` → notification).
 | Pattern | Proof of concept (`poc/`, package `com.smartparking.poc`) | Microservices |
 |---|---|---|
 | Strategy | `pricing` | Rules configured in parking-service, cost calculated in reservation-service |
+| Decorator | `pricing` | Extras stored with the rule in parking-service, decorators built and applied in reservation-service |
 | State | `spot` | parking-service |
 | Observer | `event`, `notification` | RabbitMQ exchange `parking.events`; listeners in every consuming service |
 | Factory | `payment`, `notification` | payment-service (processors), notification-service (channels) |
@@ -325,5 +397,5 @@ Observer (`ReservationCreatedEvent` → notification).
 
 Each pattern is marked in the class diagram by a UML note, and in the PoC code by a Javadoc line
 naming the pattern and the class's role. `poc/README.md` maps every class to its pattern and role,
-and `./mvnw spring-boot:run -Dspring-boot.run.profiles=demo` plays a scenario that shows all five
+and `./mvnw spring-boot:run -Dspring-boot.run.profiles=demo` plays a scenario that shows all six
 patterns working together.

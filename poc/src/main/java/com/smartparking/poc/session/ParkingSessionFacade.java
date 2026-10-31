@@ -86,14 +86,17 @@ public class ParkingSessionFacade {
         // 1. Record the exit time.
         Instant exitTime = clock.instant();
 
-        // 2. Strategy: the location's pricing rule decides the cost.
-        PricingStrategy strategy = spot.getLocation().getPricingStrategy();
+        // 2. Strategy + Decorator: the location's pricing rule and its extras decide the cost.
+        PricingStrategy strategy = spot.getLocation().getPricingStrategy(spot);
         BigDecimal cost = strategy.calculateCost(session.getEntryTime(), exitTime);
         session.end(exitTime, cost);
 
         // 3. Factory: pay with the driver's preferred method.
         Payment payment = new Payment(session, cost, session.getDriver().getPreferredPaymentMethod());
-        PaymentResult result = paymentProcessorFactory.create(payment.getMethod()).process(payment);
+        // A free stay (e.g. within the grace period) has nothing to charge, so it can't fail.
+        PaymentResult result = cost.signum() == 0
+                ? new PaymentResult(true, "Nothing to pay")
+                : paymentProcessorFactory.create(payment.getMethod()).process(payment);
         if (result.success()) {
             payment.markCompleted(exitTime);
         } else {

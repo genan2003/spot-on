@@ -293,6 +293,7 @@ confirmations.
 | Pattern | Monolith | Microservices | Event-driven |
 |---|---|---|---|
 | Strategy | Pricing module | reservation-service (rule from parking-service) | session-service (pricing projection) |
+| Decorator | Pricing module | reservation-service (extras from parking-service's rule) | session-service (pricing projection) |
 | State | Spot module | parking-service | spot-service (single writer per spot) |
 | Observer | In-process events | RabbitMQ topic exchange | The whole architecture |
 | Factory | Payments, notifications modules | payment-service, notification-service | payment-service, notification-service |

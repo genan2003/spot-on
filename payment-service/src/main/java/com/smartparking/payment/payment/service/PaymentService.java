@@ -76,7 +76,10 @@ public class PaymentService {
 	}
 
 	private void attempt(Payment payment) {
-		PaymentResult result = processorFactory.create(payment.getMethod()).process(payment);
+		// A free stay (e.g. within the grace period) has nothing to charge, so it can't fail.
+		PaymentResult result = payment.getAmount().signum() == 0
+				? new PaymentResult(true, "Nothing to pay")
+				: processorFactory.create(payment.getMethod()).process(payment);
 		Instant now = clock.instant();
 		payment.recordAttempt(result.success(), now);
 		// Sent to RabbitMQ after the commit.

@@ -80,6 +80,16 @@ class PaymentIntegrationTests {
 	}
 
 	@Test
+	void aFreeStayIsPaidWithoutAskingTheProcessor() {
+		// Would fail if the processor were asked.
+		when(random.nextDouble()).thenReturn(FAILS);
+
+		Payment payment = paymentService.charge(UUID.randomUUID(), "driver-1", new BigDecimal("0.00"), PaymentMethod.WALLET);
+
+		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.COMPLETED);
+	}
+
+	@Test
 	void unknownPaymentIs404() throws Exception {
 		mvc.perform(post("/api/v1/payments/{id}/retry", UUID.randomUUID())).andExpect(status().isNotFound());
 	}

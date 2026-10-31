@@ -8,6 +8,6 @@ public record FlatRatePricingStrategy(BigDecimal flatRate) implements PricingStr
 
     @Override
     public BigDecimal calculateCost(Instant entryTime, Instant exitTime) {
-        return flatRate;
+        return PricingStrategy.toLei(flatRate);
     }
 }

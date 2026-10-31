@@ -15,6 +15,9 @@ import com.smartparking.reservation.client.ParkingClient;
 import com.smartparking.reservation.client.SpotConflictException;
 import com.smartparking.reservation.event.SessionCompletedEvent;
 import com.smartparking.reservation.event.SessionStartedEvent;
+import com.smartparking.reservation.pricing.Bay;
+import com.smartparking.reservation.pricing.BaySurcharges;
+import com.smartparking.reservation.pricing.BayType;
 import com.smartparking.reservation.pricing.PricingRule;
 import com.smartparking.reservation.reservation.repository.ReservationRepository;
 import com.smartparking.reservation.session.domain.ParkingSession;
@@ -79,6 +82,18 @@ class ParkingSessionFacadeTests {
 	}
 
 	@Test
+	void theBaysSurchargeIsAddedByTheRulesDecorators() {
+		ParkingSession session = activeSession(new Bay(BayType.LARGE, true));
+		PricingRule rule = PricingRule.hourly(new BigDecimal("6.00")).withSurcharges(new BaySurcharges(0, 20, 0, 10));
+		when(parkingClient.getLocation(LOCATION)).thenReturn(new LocationInfo(LOCATION, "Central Garage", rule));
+
+		facade.endSession(session.getId());
+
+		// 3 started hours × 6 lei = 18, +20% large +10% EV = 23.40
+		assertThat(session.getCost()).isEqualByComparingTo("23.40");
+	}
+
+	@Test
 	void aSessionCannotEndTwice() {
 		ParkingSession session = activeSession();
 		session.end(EXIT, BigDecimal.ONE);
@@ -101,7 +116,7 @@ class ParkingSessionFacadeTests {
 	void startingOnAFreeSpotRecordsTheEntryTimeWithTheSessionAsTheHold() {
 		ArgumentCaptor<UUID> hold = ArgumentCaptor.forClass(UUID.class);
 		when(parkingClient.occupySpot(eq(SPOT), eq("driver-1"), hold.capture()))
-			.thenReturn(new HeldSpot(SPOT, "A1", LOCATION, "Central Garage", "OCCUPIED", "driver-1"));
+			.thenReturn(new HeldSpot(SPOT, "A1", LOCATION, "Central Garage", "OCCUPIED", "driver-1", BayType.MOTORCYCLE, false));
 		when(sessionRepository.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
 
 		ParkingSession session = facade.startSession("driver-1", SPOT, null);
@@ -109,6 +124,7 @@ class ParkingSessionFacadeTests {
 		assertThat(session.getId()).isEqualTo(hold.getValue());
 		assertThat(session.getStartedAt()).isEqualTo(EXIT);
 		assertThat(session.getLocationName()).isEqualTo("Central Garage");
+		assertThat(session.getBay()).isEqualTo(new Bay(BayType.MOTORCYCLE, false));
 		verify(eventPublisher).publishEvent(any(SessionStartedEvent.class));
 	}
 
@@ -124,7 +140,11 @@ class ParkingSessionFacadeTests {
 	}
 
 	private ParkingSession activeSession() {
-		ParkingSession session = new ParkingSession(UUID.randomUUID(), "driver-1", SPOT, "A1", LOCATION, "Central Garage", null, ENTRY);
+		return activeSession(Bay.STANDARD);
+	}
+
+	private ParkingSession activeSession(Bay bay) {
+		ParkingSession session = new ParkingSession(UUID.randomUUID(), "driver-1", SPOT, "A1", LOCATION, "Central Garage", bay, null, ENTRY);
 		when(sessionRepository.findById(session.getId())).thenReturn(Optional.of(session));
 		return session;
 	}

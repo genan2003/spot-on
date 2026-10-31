@@ -20,6 +20,7 @@ import com.smartparking.poc.payment.PaymentProcessorFactory;
 import com.smartparking.poc.payment.PaymentRepository;
 import com.smartparking.poc.payment.PaymentResult;
 import com.smartparking.poc.payment.PaymentStatus;
+import com.smartparking.poc.pricing.BaySurcharges;
 import com.smartparking.poc.pricing.PricingRule;
 import com.smartparking.poc.reservation.ReservationRepository;
 import com.smartparking.poc.spot.IllegalSpotStateTransitionException;
@@ -82,6 +83,22 @@ class ParkingSessionFacadeTest {
         when(sessionRepository.findById(any())).thenReturn(Optional.of(session));
         when(paymentProcessorFactory.create(PaymentMethod.CARD)).thenReturn(paymentProcessor);
         return session;
+    }
+
+    @Test
+    void theRulesDecoratorsAddTheSpotsSurcharge() {
+        ParkingSpot large = new ParkingSpot("A9", 0, "A", SpotType.LARGE, true, false);
+        spot.getLocation().addSpot(large);
+        spot.getLocation().changePricingRule(PricingRule.hourly(new BigDecimal("6.00"))
+                .withSurcharges(new BaySurcharges(0, 20, 0, 10)));
+        spot = large;
+        ParkingSession session = occupiedSession();
+        when(paymentProcessor.process(any())).thenReturn(new PaymentResult(true, "ok"));
+
+        facade.endSession(UUID.randomUUID());
+
+        // Decorator: 3 started hours × 6 lei = 18, +20% large +10% EV = 23.40
+        assertThat(session.getCost()).isEqualByComparingTo("23.40");
     }
 
     @Test

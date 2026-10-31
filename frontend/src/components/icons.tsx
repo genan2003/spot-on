@@ -24,6 +24,31 @@ export function CarIcon(props: IconProps) {
   )
 }
 
+/** Top-down motorcycle, front wheel at the top. Same height as the car so both fill a bay the same way. */
+export function MotorcycleTopIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 14 44" {...base} {...props}>
+      <rect x="5" y="1" width="4" height="11" rx="2" fill="currentColor" />
+      <rect x="0.5" y="11" width="13" height="2.2" rx="1.1" fill="currentColor" />
+      <rect x="3" y="14" width="8" height="17" rx="4" fill="currentColor" />
+      <rect x="5" y="17" width="4" height="10" rx="2" fill="var(--color-asphalt)" opacity="0.5" />
+      <rect x="5" y="31" width="4" height="12" rx="2" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** Side-on motorcycle, the pictogram painted in motorcycle bays. */
+export function MotorcycleIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" {...base} {...props}>
+      <circle cx="5" cy="16" r="3.5" />
+      <circle cx="19" cy="16" r="3.5" />
+      <path d="M5 16l4-5.5h5.5L19 16" />
+      <path d="M14.5 10.5L13 7h3" />
+    </svg>
+  )
+}
+
 export function ConeIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...base} {...props}>

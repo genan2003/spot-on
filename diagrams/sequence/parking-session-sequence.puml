@@ -3,7 +3,7 @@ title Driver parks: session starts on entry, ends on exit, and is paid
 
 ' Exercise 4. Class and method names match diagrams/class/class-diagram.puml.
 ' Patterns shown: Facade (ParkingSessionFacade coordinates everything), State (spot lifecycle),
-' Strategy (cost), Factory (payment processor, notification channel), Observer (events).
+' Strategy + Decorator (cost), Factory (payment processor, notification channel), Observer (events).
 ' Activations use explicit activate/deactivate so both branches of each alt stay balanced.
 
 autonumber
@@ -28,6 +28,7 @@ participant "state: SpotState" as State
 participant "session: ParkingSession" as Session
 participant ParkingSessionRepository as SessRepo
 participant "location: ParkingLocation" as Location
+participant "pricing: PricingDecorator" as Decorator
 participant "strategy: PricingStrategy" as Strategy
 participant PaymentProcessorFactory as PayFactory
 participant "processor: PaymentProcessor" as Processor
@@ -132,7 +133,7 @@ Ctrl -> Facade : endSession(sessionId)
 activate Facade
 note right of Facade
   <b>Facade</b>, @Transactional:
-  1. record exit  2. cost (Strategy)
+  1. record exit  2. cost (Strategy + Decorator)
   3. payment (Factory)  4. free spot (State)
   5. publish events (Observer)
 end note
@@ -147,22 +148,34 @@ Facade -> Spot : getLocation()
 activate Spot
 Spot --> Facade : location
 deactivate Spot
-Facade -> Location : getPricingStrategy()
+Facade -> Location : getPricingStrategy(spot)
 activate Location
-Location -> Location : pricingRule.toStrategy()
+Location -> Location : pricingRule.toStrategy(spot.type, spot.evCharging)
 create Strategy
 Location -> Strategy : new HourlyPricingStrategy(hourlyRate)
-Location --> Facade : strategy
+create Decorator
+Location -> Decorator : new BillingIncrementDecorator(strategy, 60 min)
+note right of Decorator
+  <b>Decorator</b>: the rule's extras wrap the strategy,
+  inside out: BillingIncrement, then BaySurcharge,
+  DailyCap and GracePeriod when the rule sets them.
+end note
+Location --> Facade : pricing (outermost decorator)
 deactivate Location
-Facade -> Strategy : calculateCost(entryTime, exitTime)
+Facade -> Decorator : calculateCost(entryTime, exitTime)
+activate Decorator
+Decorator -> Decorator : round the stay up to whole blocks
+Decorator -> Strategy : calculateCost(entryTime, roundedExit)
 activate Strategy
 note right of Strategy
   <b>Strategy</b>: the concrete class depends on the
   location's rule (Hourly, FlatRate, Tiered or
-  NightWeekend). Every started hour is charged.
+  NightWeekend). It charges the exact time it is given.
 end note
-Strategy --> Facade : cost (BigDecimal)
+Strategy --> Decorator : cost
 deactivate Strategy
+Decorator --> Facade : cost (BigDecimal)
+deactivate Decorator
 Facade -> Session : end(exitTime, cost)
 activate Session
 note right of Session : status = COMPLETED
@@ -171,18 +184,22 @@ deactivate Session
 
 create Payment
 Facade -> Payment : new Payment(session, cost,\ndriver.preferredPaymentMethod)
-Facade -> PayFactory : create(method)
-activate PayFactory
-note right of PayFactory
-  <b>Factory</b>: returns CardPaymentProcessor
-  or WalletPaymentProcessor.
-end note
-PayFactory --> Facade : processor
-deactivate PayFactory
-Facade -> Processor : process(payment)
-activate Processor
-Processor --> Facade : PaymentResult
-deactivate Processor
+alt cost > 0
+  Facade -> PayFactory : create(method)
+  activate PayFactory
+  note right of PayFactory
+    <b>Factory</b>: returns CardPaymentProcessor
+    or WalletPaymentProcessor.
+  end note
+  PayFactory --> Facade : processor
+  deactivate PayFactory
+  Facade -> Processor : process(payment)
+  activate Processor
+  Processor --> Facade : PaymentResult
+  deactivate Processor
+else free stay (within the grace period)
+  Facade -> Facade : result = success, nothing to pay
+end
 
 alt result.success
   Facade -> Payment : markCompleted(exitTime)

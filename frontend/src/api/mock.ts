@@ -5,7 +5,7 @@
  * other drivers so the live spot plan has something to show.
  */
 import { timeOfDay } from '../lib/format'
-import { cost } from '../lib/pricing'
+import { cost, normalizeRule } from '../lib/pricing'
 import type { Api } from './client'
 import { DRIVER_ID } from './driver'
 import { ApiError } from './errors'
@@ -50,7 +50,7 @@ function addLocation(
   pricing: PricingRule,
   levels: LevelPlan[],
 ) {
-  locations.push({ id, name, address, latitude, longitude, pricing, totalSpots: 0, freeSpots: 0 })
+  locations.push({ id, name, address, latitude, longitude, pricing: normalizeRule(pricing), totalSpots: 0, freeSpots: 0 })
   for (const { level, zones, perZone } of levels) {
     for (const zone of zones) {
       for (let n = 1; n <= perZone; n++) {
@@ -62,7 +62,7 @@ function addLocation(
           code: `${zone}${n}`,
           level,
           zone,
-          type: n === perZone ? 'LARGE' : n === 1 && zone === zones[0] ? 'MOTORCYCLE' : 'STANDARD',
+          type: n === perZone ? 'LARGE' : n === perZone - 1 ? 'COMPACT' : n === 1 && zone === zones[0] ? 'MOTORCYCLE' : 'STANDARD',
           evCharging: n <= 2 && zone !== zones[0],
           accessible: n === 2 && zone === zones[0],
           status,
@@ -73,7 +73,14 @@ function addLocation(
   }
 }
 
-addLocation('central-garage', 'Central Garage', 'Strada Memorandumului 21', 46.7701, 23.5878, { strategy: 'HOURLY', hourlyRate: 6 }, [
+const centralGaragePricing: PricingRule = {
+  strategy: 'HOURLY',
+  hourlyRate: 6,
+  gracePeriodMinutes: 10,
+  surcharges: { compact: -10, large: 20, motorcycle: -50, evCharging: 15 },
+}
+
+addLocation('central-garage', 'Central Garage', 'Strada Memorandumului 21', 46.7701, 23.5878, centralGaragePricing, [
   { level: 0, zones: ['A', 'B'], perZone: 10 },
   { level: -1, zones: ['A', 'B', 'C', 'D'], perZone: 10 },
 ])
@@ -86,7 +93,14 @@ addLocation(
   'Strada Aurel Vlaicu 3',
   46.7795,
   23.6196,
-  { strategy: 'TIERED', firstHourRate: 4, laterHourRate: 2 },
+  {
+    strategy: 'TIERED',
+    bands: [
+      { fromHour: 0, hourlyRate: 4 },
+      { fromHour: 1, hourlyRate: 2 },
+    ],
+    dailyCap: 20,
+  },
   [{ level: 0, zones: ['A', 'B', 'C', 'D'], perZone: 8 }],
 )
 
@@ -125,7 +139,8 @@ function notify(kind: Notification['kind'], message: string) {
 function processPayment(session: ParkingSession) {
   session.paymentStatus = 'PENDING'
   setTimeout(() => {
-    const failed = random() < PAYMENT_FAILURE_RATE
+    // A free stay (within the grace period) has nothing to charge, so it can't fail.
+    const failed = session.cost > 0 && random() < PAYMENT_FAILURE_RATE
     session.paymentStatus = failed ? 'FAILED' : 'COMPLETED'
     if (failed) notify('PAYMENT_FAILED', `Payment of ${session.cost.toFixed(2)} lei for ${session.spotCode} failed. Try payment again from your receipt.`)
     else notify('PAYMENT_COMPLETED', `Paid ${session.cost.toFixed(2)} lei for parking at ${session.spotCode}, ${session.locationName}.`)
@@ -188,7 +203,7 @@ export const mockApi: Api = {
         id: crypto.randomUUID(),
         totalSpots: 0,
         freeSpots: 0,
-        pricing: { strategy: 'HOURLY', hourlyRate: 5 },
+        pricing: normalizeRule({ strategy: 'HOURLY', hourlyRate: 5 }),
       }
       locations.push(location)
       return location
@@ -226,7 +241,7 @@ export const mockApi: Api = {
   updatePricing: (locationId, rule) =>
     delay(() => {
       const location = findLocation(locationId)
-      location.pricing = rule
+      location.pricing = normalizeRule(rule)
       return counted(location)
     }),
 
@@ -235,7 +250,7 @@ export const mockApi: Api = {
       const session = activeSession()
       if (session) {
         const location = findLocation(session.locationId)
-        session.cost = cost(location.pricing, new Date(session.startedAt), new Date())
+        session.cost = cost(location.pricing, new Date(session.startedAt), new Date(), findSpot(session.spotId))
       }
       return {
         reservation: activeReservation(),
@@ -309,7 +324,7 @@ export const mockApi: Api = {
       const endedAt = new Date()
       session.status = 'COMPLETED'
       session.endedAt = endedAt.toISOString()
-      session.cost = cost(location.pricing, new Date(session.startedAt), endedAt)
+      session.cost = cost(location.pricing, new Date(session.startedAt), endedAt, findSpot(session.spotId))
       session.paymentId = crypto.randomUUID()
       setStatus(findSpot(session.spotId), 'AVAILABLE')
       processPayment(session)

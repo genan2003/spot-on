@@ -143,7 +143,7 @@
           }
         },
         {
-          "name": "Set pricing rule (Strategy)",
+          "name": "Set pricing rule (Strategy + Decorator extras)",
           "event": [
             {
               "listen": "test",
@@ -153,7 +153,14 @@
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
                   "const pricing = pm.response.json().pricing;",
                   "pm.test('Uses the tiered strategy', () => pm.expect(pricing.strategy).to.eql('TIERED'));",
-                  "pm.test('Keeps only the rates TIERED needs', () => pm.expect(pricing.hourlyRate).to.be.null);"
+                  "pm.test('Keeps only the rates TIERED needs', () => pm.expect(pricing.hourlyRate).to.be.null);",
+                  "pm.test('Three price bands, in order', () => pm.expect(pricing.bands.map(b => b.fromHour)).to.eql([0, 1, 4]));",
+                  "// The extras become decorators around the strategy in reservation-service.",
+                  "pm.test('Extras are stored with the rule', () => {",
+                  "    pm.expect(pricing.billingIncrementMinutes).to.eql(60);",
+                  "    pm.expect(pricing.dailyCap).to.eql(30);",
+                  "    pm.expect(pricing.surcharges.large).to.eql(20);",
+                  "});"
                 ]
               }
             }
@@ -169,7 +176,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"strategy\": \"TIERED\",\n  \"firstHourRate\": 8.0,\n  \"laterHourRate\": 4.0\n}"
+              "raw": "{\n  \"strategy\": \"TIERED\",\n  \"bands\": [\n    {\n      \"fromHour\": 0,\n      \"hourlyRate\": 8.0\n    },\n    {\n      \"fromHour\": 1,\n      \"hourlyRate\": 4.0\n    },\n    {\n      \"fromHour\": 4,\n      \"hourlyRate\": 2.0\n    }\n  ],\n  \"billingIncrementMinutes\": 60,\n  \"gracePeriodMinutes\": 0,\n  \"dailyCap\": 30.0,\n  \"surcharges\": {\n    \"compact\": -10,\n    \"large\": 20,\n    \"motorcycle\": -50,\n    \"evCharging\": 15\n  }\n}"
             }
           }
         },
@@ -198,7 +205,36 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"strategy\": \"TIERED\",\n  \"firstHourRate\": 8.0\n}"
+              "raw": "{\n  \"strategy\": \"NIGHT_WEEKEND\",\n  \"dayRate\": 6.0\n}"
+            }
+          }
+        },
+        {
+          "name": "Pricing bands out of order are rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/pricing-rule",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"TIERED\",\n  \"bands\": [\n    {\n      \"fromHour\": 0,\n      \"hourlyRate\": 8.0\n    },\n    {\n      \"fromHour\": 0,\n      \"hourlyRate\": 4.0\n    }\n  ]\n}"
             }
           }
         },

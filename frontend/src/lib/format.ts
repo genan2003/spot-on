@@ -1,4 +1,5 @@
-import type { PricingRule, Spot, SpotStatus, SpotType } from '../api/types'
+import type { PriceBand, PricingRule, Spot, SpotStatus, SpotType } from '../api/types'
+import { surchargeFor } from './pricing'
 
 export function lei(amount: number): string {
   return `${amount.toFixed(2)} lei`
@@ -6,20 +7,56 @@ export function lei(amount: number): string {
 
 /** Short price for lists: whole amounts drop the decimals ("6 lei", not "6.00 lei"). */
 function shortLei(amount: number): string {
+  if (Number.isNaN(amount)) return '… lei'
   return Number.isInteger(amount) ? `${amount} lei` : lei(amount)
 }
 
+/** The rule in one sentence, as drivers see it: the strategy first, then any extras. */
 export function describePricing(rule: PricingRule): string {
+  const parts = [describeStrategy(rule)]
+  const block = rule.billingIncrementMinutes ?? 60
+  if (rule.strategy !== 'FLAT_RATE' && block !== 60) parts.push(`charged per ${block} min`)
+  if (rule.gracePeriodMinutes) parts.push(`free if you leave within ${rule.gracePeriodMinutes} min`)
+  if (rule.dailyCap != null) parts.push(`at most ${shortLei(rule.dailyCap)} a day`)
+  return parts.join(', ')
+}
+
+function describeStrategy(rule: PricingRule): string {
   switch (rule.strategy) {
     case 'HOURLY':
       return `${shortLei(rule.hourlyRate ?? 0)} per hour`
     case 'FLAT_RATE':
       return `${shortLei(rule.flatRate ?? 0)} per visit`
     case 'TIERED':
-      return `${shortLei(rule.firstHourRate ?? 0)} the first hour, then ${shortLei(rule.laterHourRate ?? 0)} per hour`
+      return describeBands(rule.bands ?? [])
     case 'NIGHT_WEEKEND':
-      return `${shortLei(rule.dayRate ?? 0)} per hour, ${shortLei(rule.nightWeekendRate ?? 0)} at night and on weekends`
+      return `${shortLei(rule.dayRate ?? 0)} per hour, ${shortLei(rule.nightWeekendRate ?? 0)} from ${rule.nightStart ?? '20:00'} to ${rule.nightEnd ?? '08:00'} and on weekends`
   }
+}
+
+/** "8 lei per hour for the first hour, 4 lei per hour up to 4 h, then 2 lei per hour" */
+function describeBands(bands: PriceBand[]): string {
+  const sorted = [...bands].sort((a, b) => a.fromHour - b.fromHour)
+  if (sorted.length === 0) return 'No price set'
+  if (sorted.length === 1) return `${shortLei(sorted[0].hourlyRate)} per hour`
+  return sorted
+    .map((band, i) => {
+      const next = sorted[i + 1]
+      const price = `${shortLei(band.hourlyRate)} per hour`
+      if (!next) return `then ${price}`
+      if (i === 0) return `${price} for the first ${next.fromHour === 1 ? 'hour' : `${next.fromHour} h`}`
+      return `${price} up to ${next.fromHour} h`
+    })
+    .join(', ')
+}
+
+/** What a bay's surcharge means for the driver, e.g. "Large bay with EV charging: 30% more"; empty when 0. */
+export function describeSurcharge(rule: PricingRule, spot: Pick<Spot, 'type' | 'evCharging'>): string {
+  const percent = surchargeFor(rule, spot)
+  if (percent === 0) return ''
+  const kind = spot.type === 'STANDARD' ? 'Bay' : `${spotTypeNames[spot.type]} bay`
+  const bay = spot.evCharging ? `${kind} with EV charging` : kind
+  return `${bay}: ${Math.abs(percent)}% ${percent > 0 ? 'more' : 'less'}`
 }
 
 export const strategyNames: Record<PricingRule['strategy'], string> = {

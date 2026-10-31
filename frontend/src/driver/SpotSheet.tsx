@@ -2,10 +2,10 @@ import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DRIVER_ID } from '../api/driver'
 import { ApiError } from '../api/errors'
-import { useCancelReservation, useCurrentParking, useNow, useReserveSpot, useStartSession } from '../api/queries'
+import { useCancelReservation, useCurrentParking, useLocation, useNow, useReserveSpot, useStartSession } from '../api/queries'
 import type { Spot } from '../api/types'
 import { StatusLabel } from '../components/status'
-import { clock, levelName, spotTypeNames } from '../lib/format'
+import { clock, describeSurcharge, levelName, spotTypeNames } from '../lib/format'
 import { button } from '../lib/ui'
 
 /** Details and actions for the selected spot, as a sheet over the bottom of the screen. */
@@ -19,6 +19,9 @@ export function SpotSheet({ spot, onClose }: { spot: Spot; onClose: () => void }
   }, [onClose])
 
   const features = [spotTypeNames[spot.type], spot.evCharging && 'EV charging', spot.accessible && 'Accessible'].filter(Boolean)
+  // The car park's pricing can charge more (or less) for this kind of bay.
+  const location = useLocation(spot.locationId)
+  const surcharge = location.data ? describeSurcharge(location.data.pricing, spot) : ''
 
   return (
     <section
@@ -42,6 +45,7 @@ export function SpotSheet({ spot, onClose }: { spot: Spot; onClose: () => void }
         <StatusLabel status={spot.status} />
         <span>{features.join(', ')}</span>
       </div>
+      {surcharge && <p className="mt-1 text-ink-muted">{surcharge}</p>}
       <SpotActions key={spot.id} spot={spot} />
     </section>
   )

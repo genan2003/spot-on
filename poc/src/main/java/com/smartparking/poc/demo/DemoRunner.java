@@ -5,7 +5,10 @@ import com.smartparking.poc.location.ParkingLocationRepository;
 import com.smartparking.poc.location.ParkingLocationService;
 import com.smartparking.poc.payment.PaymentMethod;
 import com.smartparking.poc.payment.PaymentProcessorFactory;
+import com.smartparking.poc.pricing.BaySurcharges;
+import com.smartparking.poc.pricing.PricingDecorator;
 import com.smartparking.poc.pricing.PricingRule;
+import com.smartparking.poc.pricing.PricingStrategy;
 import com.smartparking.poc.reservation.Reservation;
 import com.smartparking.poc.reservation.ReservationExpirationScheduler;
 import com.smartparking.poc.reservation.ReservationService;
@@ -28,7 +31,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * Plays one scenario that shows all five patterns working together, using the demo data from
+ * Plays one scenario that shows all six patterns working together, using the demo data from
  * {@code V2__demo_data.sql}. Run with: {@code ./mvnw spring-boot:run -Dspring-boot.run.profiles=demo}.
  * Indented lines come from the application itself (payment processors and notification channels).
  */
@@ -56,7 +59,7 @@ public class DemoRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        title("Spot On proof of concept: five design patterns working together");
+        title("Spot On proof of concept: six design patterns working together");
         say("Central Garage charges with %s.", strategyName(), "Strategy");
 
         step("1. Ana reserves spot A1");
@@ -106,6 +109,25 @@ public class DemoRunner implements CommandLineRunner {
         expirationScheduler.expireReservations();
         say("A3 is %s again.", status(A3), "State");
 
+        step("9. The admin adds extras: 15-minute blocks, +20% for large spots, at most 30 lei a day, first 10 minutes free");
+        locationService.updatePricingRule(CENTRAL_GARAGE, PricingRule.tiered(new BigDecimal("8.00"), new BigDecimal("4.00"))
+                .withBillingIncrement(15)
+                .withSurcharges(new BaySurcharges(0, 20, 0, 0))
+                .withDailyCap(new BigDecimal("30.00"))
+                .withGracePeriod(10));
+        say("The tiered strategy is now wrapped in decorators: %s", strategyName(A4), "Decorator");
+
+        step("10. Ana parks on the large spot A4 for 2 h 10 min");
+        ParkingSession anaLarge = sessionFacade.startSession(ANA, A4);
+        clock.advance(Duration.ofMinutes(130));
+        say("135 min in 15-minute blocks: 8 + 1.25 × 4 = 13 lei, +20%% for a large spot = %s lei",
+                sessionFacade.endSession(anaLarge.getId()).getCost(), "Decorator + Strategy");
+
+        step("11. Bogdan drops someone off on A2 and leaves after 6 minutes");
+        ParkingSession dropOff = sessionFacade.startSession(BOGDAN, A2);
+        clock.advance(Duration.ofMinutes(6));
+        say("Within the 10-minute grace period: %s lei", sessionFacade.endSession(dropOff.getId()).getCost(), "Decorator");
+
         step("Spots at Central Garage now");
         System.out.println("   " + locationService.getAvailability(CENTRAL_GARAGE));
         System.out.println();
@@ -141,8 +163,20 @@ public class DemoRunner implements CommandLineRunner {
     }
 
     private String strategyName() {
+        return strategyName(A1);
+    }
+
+    /** The pricing used for one spot, outermost decorator first, e.g. "GracePeriodDecorator → … → TieredPricingStrategy". */
+    private String strategyName(UUID spotId) {
         ParkingLocation location = locationRepository.findById(CENTRAL_GARAGE).orElseThrow();
-        return location.getPricingStrategy().getClass().getSimpleName();
+        PricingStrategy pricing = location.getPricingStrategy(spotRepository.findById(spotId).orElseThrow());
+        List<String> chain = new ArrayList<>();
+        while (pricing instanceof PricingDecorator decorator) {
+            chain.add(decorator.getClass().getSimpleName());
+            pricing = decorator.inner();
+        }
+        chain.add(pricing.getClass().getSimpleName());
+        return String.join(" → ", chain);
     }
 
     private String processorName(PaymentMethod method) {

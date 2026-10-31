@@ -31,7 +31,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <ol>
  *   <li>record the exit time on the session,</li>
  *   <li>fetch the location's pricing rule from parking-service and calculate the cost with its
- *       {@link PricingStrategy} (<b>Strategy</b>),</li>
+ *       {@link PricingStrategy} (<b>Strategy</b>), wrapped in the rule's extras such as a grace period
+ *       or a daily maximum (<b>Decorator</b>),</li>
  *   <li>publish {@code session.completed} (<b>Observer</b>, over RabbitMQ): payment-service charges
  *       the driver (<b>Factory</b> picks the processor), parking-service frees the spot, Occupied →
  *       Available (<b>State</b>), and notification-service tells the driver.</li>
@@ -72,7 +73,7 @@ public class ParkingSessionFacade {
 					reservationRepository.save(reservation);
 				}
 				return sessionRepository.saveAndFlush(new ParkingSession(sessionId, driverId, spotId, spot.spotCode(),
-						spot.locationId(), spot.locationName(), reservation, clock.instant()));
+						spot.locationId(), spot.locationName(), spot.bay(), reservation, clock.instant()));
 			});
 		}
 		catch (DataIntegrityViolationException | IllegalStateException ex) {
@@ -94,7 +95,7 @@ public class ParkingSessionFacade {
 		// 1. Record the exit time.
 		Instant exitTime = clock.instant();
 
-		// 2. Strategy: the location's pricing rule decides the cost.
+		// 2. Strategy + Decorator: the location's pricing rule and its extras decide the cost.
 		BigDecimal cost = calculateCost(session, exitTime);
 		session.end(exitTime, cost);
 		sessionRepository.save(session);
@@ -113,7 +114,7 @@ public class ParkingSessionFacade {
 
 	/** Cost so far for a running session, or the final cost of a finished one. */
 	public BigDecimal calculateCost(ParkingSession session, Instant until) {
-		PricingStrategy strategy = parkingClient.getLocation(session.getLocationId()).pricing().toStrategy();
+		PricingStrategy strategy = parkingClient.getLocation(session.getLocationId()).pricing().toStrategy(session.getBay());
 		return strategy.calculateCost(session.getStartedAt(), until);
 	}
 

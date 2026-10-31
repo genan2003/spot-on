@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { DRIVER_ID } from '../api/driver'
-import type { Spot, SpotStatus } from '../api/types'
+import type { Spot, SpotStatus, SpotType } from '../api/types'
 import { spotTypeNames, statusNames } from '../lib/format'
-import { AccessibleIcon, BoltIcon, CarIcon, CheckIcon, ConeIcon, ParkingSign } from './icons'
+import { AccessibleIcon, BoltIcon, CarIcon, CheckIcon, ConeIcon, MotorcycleIcon, MotorcycleTopIcon, ParkingSign } from './icons'
 
 interface SpotPlanProps {
   /** Spots of one level. Zones are drawn as rows of bays; two rows share a driving aisle. */
@@ -17,8 +17,20 @@ interface SpotPlanProps {
 type Facing = 'down' | 'up'
 
 /**
+ * Bay width shows the spot type, as painted lines do in a real car park: every bay has the same
+ * depth so rows stay aligned along the aisle, only the width changes.
+ */
+const bayWidth: Record<SpotType, string> = {
+  MOTORCYCLE: 'w-9',
+  COMPACT: 'w-10',
+  STANDARD: 'w-12',
+  LARGE: 'w-16',
+}
+
+/**
  * Top-down plan of one level, drawn the way the car park is painted: bay lines on asphalt,
  * a car in occupied bays, yellow hatching on reserved ones, a cone on bays out of service.
+ * Bay width shows the type (compact, standard, large, motorcycle).
  * Shared by the driver app and the admin dashboard so status always looks the same.
  */
 export function SpotPlan({ spots, selectedId, onSelect, matches = () => true, label }: SpotPlanProps) {
@@ -96,16 +108,19 @@ function Bay({ spot, facing, selectedId, onSelect, matches }: Omit<BayRowProps, 
       onClick={() => onSelect(spot)}
       aria-pressed={selected}
       aria-label={describe(spot)}
-      className={`relative flex h-20 w-12 shrink-0 ${towardsAisle} items-center justify-between border-l-2 border-paint px-1 py-1.5 transition-opacity ${
+      className={`relative flex h-20 ${bayWidth[spot.type]} shrink-0 ${towardsAisle} items-center justify-between border-l-2 border-paint ${
+        spot.type === 'MOTORCYCLE' ? 'px-0.5' : 'px-1'
+      } py-1.5 transition-opacity ${
         dimmed ? 'opacity-30' : ''
       } ${selected ? 'inset-ring-3 inset-ring-paint' : ''}`}
     >
       <span className="flex h-3.5 gap-0.5 text-paint/80">
+        {spot.type === 'MOTORCYCLE' && <MotorcycleIcon className="size-3.5" />}
         {spot.evCharging && <BoltIcon className="size-3.5" />}
         {spot.accessible && <AccessibleIcon className="size-3.5" />}
       </span>
 
-      <BayContent key={spot.status} status={spot.status} facing={facing} animate={changed} />
+      <BayContent key={spot.status} status={spot.status} type={spot.type} facing={facing} animate={changed} />
 
       <span className="text-sm leading-none font-extrabold tracking-tight">{spot.code}</span>
 
@@ -114,17 +129,19 @@ function Bay({ spot, facing, selectedId, onSelect, matches }: Omit<BayRowProps, 
   )
 }
 
-function BayContent({ status, facing, animate }: { status: SpotStatus; facing: Facing; animate: boolean }) {
+function BayContent({ status, type, facing, animate }: { status: SpotStatus; type: SpotType; facing: Facing; animate: boolean }) {
   const enter = animate ? 'animate-paint' : ''
   switch (status) {
     case 'AVAILABLE':
       return <CheckIcon className={`size-5 text-free-bright ${enter}`} />
     case 'RESERVED':
       return <span className={`hatch absolute inset-x-1 inset-y-5 ${enter}`} aria-hidden />
-    case 'OCCUPIED':
-      // Cars drive in from the aisle, nose first towards the wall. The slide is in the car's
-      // own frame, so rotating the car for the opposite row also flips where it comes from.
-      return <CarIcon className={`h-11 text-occupied-bright ${facing === 'up' ? 'rotate-180' : ''} ${animate ? 'animate-park-in' : ''}`} />
+    case 'OCCUPIED': {
+      // Vehicles drive in from the aisle, nose first towards the wall. The slide is in the vehicle's
+      // own frame, so rotating it for the opposite row also flips where it comes from.
+      const Vehicle = type === 'MOTORCYCLE' ? MotorcycleTopIcon : CarIcon
+      return <Vehicle className={`h-11 text-occupied-bright ${facing === 'up' ? 'rotate-180' : ''} ${animate ? 'animate-park-in' : ''}`} />
+    }
     case 'OUT_OF_SERVICE':
       return <ConeIcon className={`size-6 text-out-bright ${enter}`} />
   }

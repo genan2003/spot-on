@@ -4,15 +4,43 @@ export type SpotStatus = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'OUT_OF_SERVICE
 export type SpotType = 'STANDARD' | 'COMPACT' | 'LARGE' | 'MOTORCYCLE'
 export type PricingStrategyType = 'HOURLY' | 'FLAT_RATE' | 'TIERED' | 'NIGHT_WEEKEND'
 
-/** Mirrors the Strategy pattern: one rule per location, with the fields its strategy needs. */
+/** Tiered pricing: from hour `fromHour` of the stay on, each hour costs `hourlyRate`. */
+export interface PriceBand {
+  fromHour: number
+  hourlyRate: number
+}
+
+/** Percent added per bay type (negative for a discount), plus one for EV charging. */
+export interface BaySurcharges {
+  compact: number
+  large: number
+  motorcycle: number
+  evCharging: number
+}
+
+export type BillingIncrement = 15 | 30 | 60
+
+/**
+ * Mirrors the Strategy pattern: one rule per location, with the fields its strategy needs, plus extras
+ * for any strategy that the backend applies as decorators (Decorator pattern).
+ */
 export interface PricingRule {
   strategy: PricingStrategyType
   hourlyRate?: number
   flatRate?: number
-  firstHourRate?: number
-  laterHourRate?: number
+  bands?: PriceBand[]
   dayRate?: number
   nightWeekendRate?: number
+  /** "HH:mm", local time. Night and weekend pricing only. */
+  nightStart?: string
+  nightEnd?: string
+  /** The stay is charged in whole blocks of this many minutes. Default 60. */
+  billingIncrementMinutes?: BillingIncrement
+  /** Stays this short are free. 0 = none. */
+  gracePeriodMinutes?: number
+  /** At most this much per started 24 hours. Absent = no maximum. */
+  dailyCap?: number
+  surcharges?: BaySurcharges
 }
 
 export interface ParkingLocation {

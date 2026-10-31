@@ -43,7 +43,7 @@ class ParkingLocation {
   - latitude: double
   - longitude: double
   - pricingRule: PricingRule
-  + getPricingStrategy(): PricingStrategy
+  + getPricingStrategy(spot: ParkingSpot): PricingStrategy
   + addSpot(spot: ParkingSpot): void
   + changePricingRule(rule: PricingRule): void
   + countAvailable(): int
@@ -61,17 +61,33 @@ interface ParkingLocationRepository <<Repository>> {
   + save(location: ParkingLocation): ParkingLocation
 }
 
-' ───────────────────────────── pricing (Strategy) ─────────────────────────────
+' ───────────────────────────── pricing (Strategy + Decorator) ─────────────────────────────
 ' package pricing
 class PricingRule {
   - strategyType: PricingStrategyType
   - hourlyRate: BigDecimal
   - flatRate: BigDecimal
-  - firstHourRate: BigDecimal
-  - laterHourRate: BigDecimal
+  - bands: List<PriceBand>
   - dayRate: BigDecimal
   - nightWeekendRate: BigDecimal
-  + toStrategy(): PricingStrategy
+  - nightStart: LocalTime
+  - nightEnd: LocalTime
+  - billingIncrementMinutes: int
+  - gracePeriodMinutes: int
+  - dailyCap: BigDecimal
+  - surcharges: BaySurcharges
+  + toStrategy(spotType: SpotType, evCharging: boolean): PricingStrategy
+}
+class PriceBand {
+  - fromHour: int
+  - hourlyRate: BigDecimal
+}
+class BaySurcharges {
+  - compact: int
+  - large: int
+  - motorcycle: int
+  - evCharging: int
+  + percentFor(type: SpotType, hasCharger: boolean): int
 }
 enum PricingStrategyType {
   HOURLY
@@ -91,13 +107,34 @@ class FlatRatePricingStrategy {
   + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
 }
 class TieredPricingStrategy {
-  - firstHourRate: BigDecimal
-  - laterHourRate: BigDecimal
+  - bands: List<PriceBand>
   + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
 }
 class NightWeekendPricingStrategy {
   - dayRate: BigDecimal
   - nightWeekendRate: BigDecimal
+  - nightStart: LocalTime
+  - nightEnd: LocalTime
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+abstract class PricingDecorator {
+  # inner: PricingStrategy
+  + {abstract} calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+class BillingIncrementDecorator {
+  - increment: Duration
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+class BaySurchargeDecorator {
+  - percent: int
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+class DailyCapDecorator {
+  - dailyCap: BigDecimal
+  + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
+}
+class GracePeriodDecorator {
+  - gracePeriod: Duration
   + calculateCost(entryTime: Instant, exitTime: Instant): BigDecimal
 }
 
@@ -390,6 +427,18 @@ PricingStrategy <|.. TieredPricingStrategy
 PricingStrategy <|.. NightWeekendPricingStrategy
 PricingRule ..> PricingStrategy : <<creates>>
 ParkingLocation ..> PricingStrategy : uses
+PricingRule "1" *-- "0..*" PriceBand : bands
+PricingRule "1" *-- "1" BaySurcharges : surcharges
+TieredPricingStrategy "1" o-- "1..*" PriceBand : charges by
+
+' Decorator
+PricingStrategy <|.. PricingDecorator
+PricingDecorator "0..*" o--> "1" PricingStrategy : inner
+PricingDecorator <|-- BillingIncrementDecorator
+PricingDecorator <|-- BaySurchargeDecorator
+PricingDecorator <|-- DailyCapDecorator
+PricingDecorator <|-- GracePeriodDecorator
+PricingRule ..> PricingDecorator : <<creates>>
 
 ' State
 ParkingSpot "1" --> "1" SpotState : state
@@ -471,6 +520,8 @@ Notification -[hidden]right- ChannelType
 ' Stack sibling classes in two rows so the diagram is not one very wide line.
 HourlyPricingStrategy -[hidden]down- TieredPricingStrategy
 FlatRatePricingStrategy -[hidden]down- NightWeekendPricingStrategy
+BillingIncrementDecorator -[hidden]down- DailyCapDecorator
+BaySurchargeDecorator -[hidden]down- GracePeriodDecorator
 AvailableState -[hidden]down- OccupiedState
 ReservedState -[hidden]down- OutOfServiceState
 ReservationCreatedEvent -[hidden]down- SessionCompletedEvent
@@ -484,6 +535,8 @@ note as NStrategy
 Strategy: PricingStrategy
 Concrete strategies: Hourly, FlatRate, Tiered, NightWeekend
 Context: ParkingLocation (built from its PricingRule)
+Each strategy charges the exact time; the extras are
+decorators around it (see Decorator).
 Client: ParkingSessionFacade asks for the cost
 New pricing rule = new class, no caller changes.
 end note
@@ -495,6 +548,24 @@ NStrategy .. NightWeekendPricingStrategy
 NStrategy .. ParkingLocation
 NStrategy .. PricingRule
 NStrategy .. ParkingSessionFacade
+
+note as NDecorator
+<b>Decorator</b> (pricing extras)
+Component: PricingStrategy
+Decorator: PricingDecorator wraps another PricingStrategy
+Concrete decorators: BillingIncrement, BaySurcharge,
+DailyCap, GracePeriod
+Built by PricingRule.toStrategy(), inside out:
+blocks → surcharge → daily cap → grace period.
+New extra = new decorator, no strategy changes.
+end note
+NDecorator .. PricingStrategy
+NDecorator .. PricingDecorator
+NDecorator .. BillingIncrementDecorator
+NDecorator .. BaySurchargeDecorator
+NDecorator .. DailyCapDecorator
+NDecorator .. GracePeriodDecorator
+NDecorator .. PricingRule
 
 note as NState
 <b>State</b> (spot lifecycle)
@@ -564,7 +635,7 @@ note as NFacade
 <b>Facade</b> (ending a session)
 Facade: ParkingSessionFacade
 Client: ParkingSessionController
-endSession(): record exit → cost (Strategy) →
+endSession(): record exit → cost (Strategy + Decorator) →
 payment (Factory) → release spot (State) →
 publish SessionCompletedEvent (Observer),
 all in one transaction.

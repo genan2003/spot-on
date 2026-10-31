@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useLocation, useSpots } from '../api/queries'
-import type { Spot } from '../api/types'
+import type { Spot, SpotType } from '../api/types'
 import { BackIcon } from '../components/icons'
 import { LevelPicker } from '../components/LevelPicker'
 import { Legend } from '../components/Legend'
 import { QueryState } from '../components/QueryState'
 import { SpotPlan } from '../components/SpotPlan'
-import { describePricing, levelName, levelsOf } from '../lib/format'
+import { describePricing, levelName, levelsOf, spotTypeNames } from '../lib/format'
 import { SpotSheet } from './SpotSheet'
 
 export function LocationPage() {
@@ -18,6 +18,7 @@ export function LocationPage() {
   const [selectedId, setSelectedId] = useState<string>()
   const [needsEv, setNeedsEv] = useState(false)
   const [needsAccessible, setNeedsAccessible] = useState(false)
+  const [bayType, setBayType] = useState<SpotType>()
 
   return (
     <>
@@ -45,7 +46,8 @@ export function LocationPage() {
           const onLevel = all.filter((s) => s.level === current)
           const free = onLevel.filter((s) => s.status === 'AVAILABLE').length
           const selected = all.find((s) => s.id === selectedId)
-          const matches = (s: Spot) => (!needsEv || s.evCharging) && (!needsAccessible || s.accessible)
+          const matches = (s: Spot) =>
+            (!needsEv || s.evCharging) && (!needsAccessible || s.accessible) && (!bayType || s.type === bayType)
 
           return (
             <>
@@ -59,6 +61,7 @@ export function LocationPage() {
                     Accessible
                   </Toggle>
                 </div>
+                <BayTypePicker value={bayType} onChange={setBayType} />
                 <p className="tabular text-lg font-bold" aria-live="polite">
                   {free === 0 ? `No free spots on ${levelName(current).toLowerCase()}` : `${free} free on ${levelName(current).toLowerCase()}`}
                 </p>
@@ -99,5 +102,35 @@ function Toggle({ pressed, onChange, children }: { pressed: boolean; onChange: (
     >
       {children}
     </button>
+  )
+}
+
+const bayTypes: (SpotType | undefined)[] = [undefined, 'COMPACT', 'STANDARD', 'LARGE', 'MOTORCYCLE']
+
+/** One bay type at a time; spots of other types are dimmed on the plan, like the toggles above. */
+function BayTypePicker({ value, onChange }: { value?: SpotType; onChange: (type?: SpotType) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-labelledby="bay-type-label">
+      <span id="bay-type-label" className="text-sm font-semibold">
+        Bay type
+      </span>
+      {bayTypes.map((type) => {
+        const active = type === value
+        return (
+          <button
+            key={type ?? 'any'}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(type)}
+            className={`min-h-10 rounded-sign border-2 px-3 text-sm font-semibold ${
+              active ? 'border-ink bg-ink text-surface' : 'border-edge bg-surface text-ink hover:border-ink'
+            }`}
+          >
+            {type ? spotTypeNames[type] : 'Any'}
+          </button>
+        )
+      })}
+    </div>
   )
 }

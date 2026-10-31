@@ -1,5 +1,7 @@
 package com.smartparking.reservation.session.domain;
 
+import com.smartparking.reservation.pricing.Bay;
+import com.smartparking.reservation.pricing.BayType;
 import com.smartparking.reservation.reservation.domain.Reservation;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -34,6 +36,12 @@ public class ParkingSession {
 
 	private String locationName;
 
+	/** The bay's type and charger, copied at entry: the pricing rule's surcharge depends on them. */
+	@Enumerated(EnumType.STRING)
+	private BayType spotType = BayType.STANDARD;
+
+	private boolean evCharging;
+
 	/** The reservation this session fulfils, if the driver reserved first. */
 	@OneToOne
 	@JoinColumn(name = "reservation_id")
@@ -54,15 +62,21 @@ public class ParkingSession {
 	private PaymentStatus paymentStatus;
 
 	public ParkingSession(UUID id, String driverId, UUID spotId, String spotCode, UUID locationId, String locationName,
-			Reservation reservation, Instant startedAt) {
+			Bay bay, Reservation reservation, Instant startedAt) {
 		this.id = id;
 		this.driverId = driverId;
 		this.spotId = spotId;
 		this.spotCode = spotCode;
 		this.locationId = locationId;
 		this.locationName = locationName;
+		this.spotType = bay.type();
+		this.evCharging = bay.evCharging();
 		this.reservation = reservation;
 		this.startedAt = startedAt;
+	}
+
+	public Bay getBay() {
+		return new Bay(spotType, evCharging);
 	}
 
 	public boolean isActive() {

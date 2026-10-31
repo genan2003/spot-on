@@ -1,6 +1,6 @@
 # Spot On: design pattern proof of concept (exercise 5)
 
-One Spring Boot application that implements the five patterns from `docs/design-patterns.md`,
+One Spring Boot application that implements the six patterns from `docs/design-patterns.md`,
 faithful to the class diagram in `diagrams/class/class-diagram.puml`. Data lives in an in-memory
 H2 database created by Flyway on every start, with demo data from `V2__demo_data.sql`.
 
@@ -25,6 +25,10 @@ every time. The race for spot A4 is real: which driver wins changes from run to 
 | | Concrete strategies | `HourlyPricingStrategy`, `FlatRatePricingStrategy`, `TieredPricingStrategy`, `NightWeekendPricingStrategy` |
 | | Context | `location.ParkingLocation` (built from its `pricing.PricingRule`) |
 | | Client | `session.ParkingSessionFacade` |
+| Decorator | Component | `pricing.PricingStrategy` (the same interface) |
+| | Decorator | `pricing.PricingDecorator` (wraps an `inner` strategy) |
+| | Concrete decorators | `BillingIncrementDecorator`, `BaySurchargeDecorator`, `DailyCapDecorator`, `GracePeriodDecorator` |
+| | Builds the chain | `pricing.PricingRule.toStrategy(spotType, evCharging)`, inside out: blocks, surcharge, daily cap, grace period |
 | State | State | `spot.SpotState` (default methods reject; each state overrides what it allows) |
 | | Concrete states | `AvailableState`, `ReservedState`, `OccupiedState`, `OutOfServiceState` |
 | | Context | `spot.ParkingSpot` |
@@ -57,7 +61,7 @@ Both errors, and an illegal spot transition, become `409 Conflict` with an RFC 7
 
 | Test | Covers |
 |---|---|
-| `pricing.PricingStrategyTest` | Every strategy, the started-hour rule, `PricingRule.toStrategy()` |
+| `pricing.PricingStrategyTest` | Every strategy, every decorator, the order `PricingRule.toStrategy()` wraps them in |
 | `spot.SpotStateTest` | All 20 cells of the state × action transition table |
 | `payment.PaymentProcessorFactoryTest`, `notification.NotificationChannelFactoryTest` | Factory output; simulated success and failure |
 | `session.ParkingSessionFacadeTest` | Facade orchestration with every subsystem mocked, including a failed payment |
