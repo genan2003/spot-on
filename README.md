@@ -82,6 +82,7 @@ using the app:
 | `reservation.spot-closures` | reservation-service | `spot.closed` (an admin closed a reserved spot: cancels the reservation) |
 | `payment.session-completed` | payment-service | `session.completed` (charges the driver) |
 | `notification.events` | notification-service | reservation, session and payment events |
+| one temporary queue per parking-service instance (activity) | parking-service | every `reservation.*`, `session.*` and `payment.*` event: the admin's live activity feed (`GET /api/v1/activity`, STOMP `/topic/activity`) |
 | one temporary queue per notification-service instance | notification-service | `notification.sent`: forwarded to the driver's open live stream (`GET /api/v1/notifications/stream`, Server-Sent Events) |
 | `reservation.expiry-delay` | — | one message per reservation (two if it was extended); when its TTL runs out it moves to `reservation.expiry` |
 | `reservation.reminder-delay` | — | the same for the "expires soon" reminder: TTL = hold time − 5 min, then `reservation.reminders` → `reservation.expiring` |

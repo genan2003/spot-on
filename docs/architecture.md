@@ -83,7 +83,7 @@ This is what Stage 2 builds (`docker-compose.yml`). Five deployables, each with 
 | Service | Owns | Synchronous API (via the gateway) | Publishes | Consumes |
 |---|---|---|---|---|
 | gateway | — | Routes `/api/v1/**`, `/ws`; rate-limits reserving per driver | — | — |
-| parking-service | `parking_db` | Locations, spots, pricing rules, availability; STOMP `/topic/spot-status` | `spot.status-changed`, `spot.closed` | `reservation.cancelled`, `reservation.expired`, `reservation.changed`, `session.completed` |
+| parking-service | `parking_db` | Locations, spots, pricing rules, availability; STOMP `/topic/spot-status` and `/topic/activity` | `spot.status-changed`, `spot.closed` | `reservation.cancelled`, `reservation.expired`, `reservation.changed`, `session.completed` (free the spot); every `reservation.*`, `session.*` and `payment.*` (admin activity feed, display only) |
 | reservation-service | `reservation_db` | Reservations, sessions | `reservation.*` (incl. `reservation.expiring` reminders), `session.started`, `session.completed` | `payment.*`, `spot.closed` |
 | payment-service | `payment_db` | Payments | `payment.completed`, `payment.failed` | `session.completed` |
 | notification-service | `notification_db` | Notifications, live stream (Server-Sent Events) | `notification.sent` | `reservation.*`, `session.completed`, `payment.*`, `notification.sent` |

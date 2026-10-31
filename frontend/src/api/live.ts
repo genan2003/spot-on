@@ -1,7 +1,7 @@
 import { Client } from '@stomp/stompjs'
 import { USE_MOCKS } from './client'
 import { DRIVER_ID } from './driver'
-import type { Notification, SpotStatusChanged } from './types'
+import type { ActivityItem, Notification, SpotStatusChanged } from './types'
 
 /**
  * Subscribes to spot.status-changed events. parking-service relays them from RabbitMQ
@@ -20,12 +20,36 @@ export function subscribeToSpotStatus(onChange: (event: SpotStatusChanged) => vo
     }
   }
 
+  return subscribeToTopic('/topic/spot-status', onChange)
+}
+
+/**
+ * Subscribes to the admin's activity feed: every reservation, session and payment event, relayed by parking-service
+ * from RabbitMQ to the STOMP topic /topic/activity.
+ */
+export function subscribeToActivity(onItem: (item: ActivityItem) => void): () => void {
+  if (USE_MOCKS) {
+    let unsubscribe = () => {}
+    let cancelled = false
+    import('./mock').then(({ onMockActivity }) => {
+      if (!cancelled) unsubscribe = onMockActivity(onItem)
+    })
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }
+  return subscribeToTopic('/topic/activity', onItem)
+}
+
+/** One STOMP connection to parking-service's /ws (through the gateway) for one topic; reconnects after a drop. */
+function subscribeToTopic<T>(topic: string, onMessage: (body: T) => void): () => void {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
   const client = new Client({
     brokerURL: `${protocol}://${location.host}/ws`,
     reconnectDelay: 5000,
     onConnect: () => {
-      client.subscribe('/topic/spot-status', (message) => onChange(JSON.parse(message.body)))
+      client.subscribe(topic, (message) => onMessage(JSON.parse(message.body)))
     },
   })
   client.activate()

@@ -2,6 +2,7 @@ import { Link, Navigate, NavLink, Outlet } from 'react-router'
 import { useLiveSpotStatus, useLocations } from '../api/queries'
 import { ParkingSign } from '../components/icons'
 import { QueryState } from '../components/QueryState'
+import { ActivityFeed } from './ActivityFeed'
 
 export function AdminLayout() {
   useLiveSpotStatus()
@@ -42,6 +43,7 @@ export function AdminLayout() {
               Add car park
             </Link>
           </nav>
+          <ActivityFeed />
           <Link to="/" className="text-sm text-ink-muted hover:underline">
             Open the driver app
           </Link>

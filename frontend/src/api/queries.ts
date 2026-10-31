@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from './client'
-import { subscribeToNotifications, subscribeToSpotStatus } from './live'
-import type { CurrentParking, History, NewLocation, NotificationChannel, PaymentMethod, PaymentStatus, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
+import { subscribeToActivity, subscribeToNotifications, subscribeToSpotStatus } from './live'
+import type { ActivityItem, CurrentParking, History, NewLocation, NotificationChannel, PaymentMethod, PaymentStatus, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
 
 export const keys = {
   locations: ['locations'] as const,
@@ -116,6 +116,21 @@ export function useLiveNotifications(): Notification | undefined {
     [queryClient],
   )
   return latest
+}
+
+/** Admin activity feed: loaded once, then each new event is added at the top as it arrives (STOMP). */
+export function useActivity() {
+  const queryClient = useQueryClient()
+  useEffect(
+    () =>
+      subscribeToActivity((item) =>
+        queryClient.setQueryData<ActivityItem[]>(['activity'], (list) =>
+          list?.some((i) => i.eventId === item.eventId) ? list : [item, ...(list ?? [])].slice(0, 50),
+        ),
+      ),
+    [queryClient],
+  )
+  return useQuery({ queryKey: ['activity'], queryFn: api.listActivity })
 }
 
 /** Keeps every cached spot list in step with spot.status-changed events. */

@@ -30,7 +30,7 @@ Driver --> FE
 Admin --> FE
 FE --> GW : HTTPS /api/v1, /ws
 
-GW --> PS : /parking-locations/**\n/ws (STOMP, spot status)
+GW --> PS : /parking-locations/**, /activity\n/ws (STOMP, spot status, activity)
 GW --> RS : /reservations/**\n/parking-sessions/**
 GW --> PayS : /payments/**
 GW --> NS : /notifications/**
@@ -46,7 +46,7 @@ RS ..> MQ : publishes\nreservation.created/cancelled/expired\nsession.started, s
 PayS ..> MQ : publishes\npayment.completed / payment.failed
 PS ..> MQ : publishes\nspot.status-changed
 
-MQ ..> PS : reservation.cancelled/expired,\nsession.completed → free spot
+MQ ..> PS : reservation.cancelled/expired,\nsession.completed → free spot;\nreservation.*, session.*, payment.*\n→ admin activity feed
 MQ ..> PayS : session.completed\n→ charge
 MQ ..> RS : payment.*\n→ record result
 MQ ..> NS : reservation.*, session.completed,\npayment.* → notify

@@ -82,6 +82,23 @@ public class MessagingConfig {
 	}
 
 	/**
+	 * One temporary queue per instance for the admin's activity feed: every reservation, session and payment event,
+	 * whatever else consumes it. Not durable: the feed is for watching live, nothing waits for it.
+	 */
+	@Bean
+	AnonymousQueue activityQueue() {
+		return new AnonymousQueue();
+	}
+
+	@Bean
+	Declarables activityBindings(AnonymousQueue activityQueue, TopicExchange parkingEventsExchange) {
+		return new Declarables(
+				BindingBuilder.bind(activityQueue).to(parkingEventsExchange).with("reservation.*"),
+				BindingBuilder.bind(activityQueue).to(parkingEventsExchange).with("session.*"),
+				BindingBuilder.bind(activityQueue).to(parkingEventsExchange).with("payment.*"));
+	}
+
+	/**
 	 * Dead-letter queue: durable, so failed messages wait here for someone to look at them (RabbitMQ UI, "Get
 	 * messages") and publish them again once the cause is fixed. Declared on a separate exchange, so the
 	 * existing queues keep their arguments and brokers that already have them don't refuse the declaration.

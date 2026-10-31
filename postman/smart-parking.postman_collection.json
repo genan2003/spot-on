@@ -1493,6 +1493,48 @@
           }
         },
         {
+          "name": "Admin activity feed shows the driver's events (RabbitMQ to STOMP)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 300);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventually consistent: the events reach parking-service through RabbitMQ, so retry for a few seconds.",
+                  "const driver = pm.variables.get('driverId');",
+                  "let ok = false;",
+                  "try { const types = pm.response.json().filter(i => i.driverId === driver).map(i => i.type); ok = pm.response.code === 200 && ['reservation.created', 'session.started', 'session.completed'].every(t => types.includes(t)) && types.some(t => t.startsWith('payment.')); } catch (e) { ok = false; }",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (!ok && tries < 20) {",
+                  "    pm.collectionVariables.set('tries', tries + 1);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('tries', 0);",
+                  "    pm.test('Reservation, session and payment events arrived', () => pm.expect(ok).to.be.true);",
+                  "    const items = pm.response.json();",
+                  "    pm.test('At most 50, newest first', () => { pm.expect(items.length).to.be.at.most(50); const t = items.map(i => new Date(i.occurredAt).getTime()); pm.expect(t[0]).to.be.at.least(t[t.length - 1]); });",
+                  "    const done = items.find(i => i.driverId === driver && i.type === 'session.completed');",
+                  "    pm.test('The session names its spot and car park', () => { pm.expect(done.spotCode).to.be.a('string'); pm.expect(done.locationName).to.be.a('string'); });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/activity"
+          }
+        },
+        {
           "name": "Payment account (new driver: card, 25 lei)",
           "event": [
             {

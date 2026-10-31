@@ -11,6 +11,7 @@ import type { Api } from './client'
 import { DRIVER_ID } from './driver'
 import { ApiError } from './errors'
 import type {
+  ActivityItem,
   CurrentParking,
   DailyStats,
   Notification,
@@ -217,6 +218,29 @@ function broadcast(spot: Spot) {
   listeners.forEach((listener) => listener({ spotId, locationId, status, heldBy, licencePlate, type, evCharging, accessible }))
 }
 
+const activityListeners = new Set<(item: ActivityItem) => void>()
+const activityLog: ActivityItem[] = []
+
+/** Like parking-service's activity feed: every reservation, session and payment event, newest first, at most 50. */
+function activity(type: string, fields: Omit<ActivityItem, 'eventId' | 'occurredAt' | 'type'>) {
+  const item: ActivityItem = { eventId: crypto.randomUUID(), occurredAt: new Date().toISOString(), type, ...fields }
+  activityLog.unshift(item)
+  activityLog.splice(50)
+  activityListeners.forEach((listener) => listener(structuredClone(item)))
+}
+
+/** Where an event happened, from anything that names a spot and its car park. */
+const at = (x: { spotCode?: string; code?: string; locationId: string }) => ({
+  spotCode: x.spotCode ?? x.code,
+  locationId: x.locationId,
+  locationName: findLocation(x.locationId).name,
+})
+
+export function onMockActivity(listener: (item: ActivityItem) => void): () => void {
+  activityListeners.add(listener)
+  return () => activityListeners.delete(listener)
+}
+
 const notificationListeners = new Set<(notification: Notification) => void>()
 
 /** Like notification-service: saves it, then pushes it to the open app (Server-Sent Events). */
@@ -267,6 +291,7 @@ function processPayment(session: ParkingSession, switchTo?: PaymentMethod) {
     session.paymentStatus = failed ? 'FAILED' : 'COMPLETED'
     Object.assign(record, { status: session.paymentStatus, attempts: record.attempts + 1, processedAt: new Date().toISOString() })
     const amount = `${session.cost.toFixed(2)} lei`
+    activity(failed ? 'payment.failed' : 'payment.completed', { driverId: DRIVER_ID, amount: session.cost, method: record.method })
     if (failed && wallet) notify('PAYMENT_FAILED', `Your wallet doesn't have enough money for ${amount}. Add money or pay by card from your receipt.`)
     else if (failed) notify('PAYMENT_FAILED', `Your card was declined for ${amount}. Try payment again from your receipt, or pay from your wallet.`)
     else notify('PAYMENT_COMPLETED', `Paid ${amount} ${wallet ? 'from your wallet' : 'by card'} for your parking session.`)
@@ -318,6 +343,7 @@ setInterval(() => {
     if (reservation.status === 'ACTIVE' && left > 0 && left <= REMINDER_MS && !reminded.has(key)) {
       reminded.add(key)
       const location = findLocation(reservation.locationId)
+      activity('reservation.expiring', { driverId: DRIVER_ID, ...at(reservation) })
       notify(
         'RESERVATION_EXPIRING',
         `${reservation.spotCode} at ${location.name} is held for you only until ${timeOfDay(reservation.expiresAt)}. Start your session or extend the hold before then.`,
@@ -327,6 +353,7 @@ setInterval(() => {
       reservation.status = 'EXPIRED'
       reservation.endedAt = reservation.expiresAt
       setStatus(findSpot(reservation.spotId), 'AVAILABLE')
+      activity('reservation.expired', { driverId: DRIVER_ID, ...at(reservation) })
       notify('RESERVATION_EXPIRED', `Your reservation for ${reservation.spotCode} expired, so the spot is free again.`)
     }
   }
@@ -374,10 +401,17 @@ setInterval(() => {
   const spot = candidates[Math.floor(random() * candidates.length)]
   if (!spot) return
   if (spot.status === 'AVAILABLE') {
-    if (random() < 0.3) setStatus(spot, 'RESERVED', 'someone-else')
-    else setStatus(spot, 'OCCUPIED', 'someone-else', demoPlate())
+    if (random() < 0.3) {
+      setStatus(spot, 'RESERVED', 'someone-else')
+      activity('reservation.created', { driverId: 'someone-else', ...at(spot) })
+    } else {
+      setStatus(spot, 'OCCUPIED', 'someone-else', demoPlate())
+      activity('session.started', { driverId: 'someone-else', ...at(spot) })
+    }
+  } else {
+    setStatus(spot, 'AVAILABLE')
+    activity('session.completed', { driverId: 'someone-else', ...at(spot) })
   }
-  else setStatus(spot, 'AVAILABLE')
 }, 4000)
 
 const delay = <T>(produce: () => T): Promise<T> =>
@@ -402,6 +436,7 @@ export const mockApi: Api = {
   listLocations: () => delay(() => locations.map(counted)),
   getLocation: (id) => delay(() => counted(findLocation(id))),
   getDailyStats: (locationId) => delay(() => dailyStats(locationId, 7)),
+  listActivity: () => delay(() => structuredClone(activityLog)),
   listSpots: (locationId) => delay(() => spots.filter((s) => s.locationId === locationId)),
 
   createLocation: (input) =>
@@ -493,6 +528,7 @@ export const mockApi: Api = {
         reservation.cancelReason = 'SPOT_CLOSED'
         reservation.endedAt = new Date().toISOString()
         const location = findLocation(spot.locationId)
+        activity('reservation.cancelled', { driverId: DRIVER_ID, ...at(reservation), reason: 'SPOT_CLOSED' })
         notify(
           'RESERVATION_CANCELLED',
           `${spot.code} at ${location.name} was closed by the car park, so your reservation was cancelled. Pick another free spot.`,
@@ -554,6 +590,7 @@ export const mockApi: Api = {
       }
       reservations.push(reservation)
       setStatus(spot, 'RESERVED', DRIVER_ID)
+      activity('reservation.created', { driverId: DRIVER_ID, ...at(reservation) })
       notify('RESERVATION_CREATED', `${spot.code} at ${location.name} is held for you until ${timeOfDay(reservation.expiresAt)}.`)
       return reservation
     }),
@@ -570,6 +607,7 @@ export const mockApi: Api = {
       setStatus(spot, 'RESERVED', DRIVER_ID)
       Object.assign(reservation, { spotId, spotCode: spot.code, locationId: location.id, locationName: location.name })
       setStatus(previous, 'AVAILABLE')
+      activity('reservation.changed', { driverId: DRIVER_ID, ...at(reservation), previousSpotCode: previous.code })
       notify(
         'RESERVATION_CHANGED',
         `Your reservation moved from ${previous.code} to ${spot.code}. It is held until ${timeOfDay(reservation.expiresAt)}.`,
@@ -583,6 +621,7 @@ export const mockApi: Api = {
       if (reservation.extended) throw new ApiError(409, 'You have already extended this reservation once.')
       reservation.expiresAt = new Date(new Date(reservation.expiresAt).getTime() + RESERVATION_MINUTES * 60_000).toISOString()
       reservation.extended = true
+      activity('reservation.changed', { driverId: DRIVER_ID, ...at(reservation) })
       notify('RESERVATION_CHANGED', `${reservation.spotCode} is now held for you until ${timeOfDay(reservation.expiresAt)}.`)
       return reservation
     }),
@@ -595,6 +634,7 @@ export const mockApi: Api = {
       reservation.cancelReason = 'DRIVER'
       reservation.endedAt = new Date().toISOString()
       setStatus(findSpot(reservation.spotId), 'AVAILABLE')
+      activity('reservation.cancelled', { driverId: DRIVER_ID, ...at(reservation), reason: 'DRIVER' })
       notify('RESERVATION_CANCELLED', `You cancelled your reservation for ${reservation.spotCode}.`)
     }),
 
@@ -622,6 +662,7 @@ export const mockApi: Api = {
       }
       sessions.push(session)
       setStatus(spot, 'OCCUPIED', DRIVER_ID, plate)
+      activity('session.started', { driverId: DRIVER_ID, ...at(session) })
       return session
     }),
 
@@ -636,6 +677,7 @@ export const mockApi: Api = {
       session.cost = cost(location.pricing, new Date(session.startedAt), endedAt, findSpot(session.spotId))
       session.paymentId = crypto.randomUUID()
       setStatus(findSpot(session.spotId), 'AVAILABLE')
+      activity('session.completed', { driverId: DRIVER_ID, ...at(session), amount: session.cost })
       processPayment(session)
       return session
     }),

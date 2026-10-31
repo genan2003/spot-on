@@ -13,7 +13,7 @@ spring:
             - id: parking-service
               uri: ${PARKING_SERVICE_URL:http://localhost:8081}
               predicates:
-                - Path=/api/v1/parking-locations/**
+                - Path=/api/v1/parking-locations/**,/api/v1/activity
             # Real-time spot status (WebSocket upgrade is proxied on the same route type)
             - id: parking-service-ws
               uri: ${PARKING_SERVICE_URL:http://localhost:8081}

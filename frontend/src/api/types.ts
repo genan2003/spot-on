@@ -153,6 +153,25 @@ export interface DailyStats {
   unpaid: number
 }
 
+/**
+ * One reservation, session or payment event in the admin's activity feed (parking-service relays them from
+ * RabbitMQ). `type` is the routing key; fields an event doesn't carry are missing (payments name no spot).
+ */
+export interface ActivityItem {
+  eventId: string
+  occurredAt: string
+  type: string
+  driverId?: string
+  spotCode?: string
+  previousSpotCode?: string
+  locationId?: string
+  locationName?: string
+  /** A session's cost or a payment's amount. */
+  amount?: number
+  method?: PaymentMethod
+  reason?: 'DRIVER' | 'SPOT_CLOSED'
+}
+
 export interface History {
   reservations: Reservation[]
   sessions: ParkingSession[]

@@ -111,6 +111,10 @@ docker compose start notification-service
 # Ready drops to 0; the bell shows the two new notifications
 ```
 
+The admin dashboard's "Activity" list (left column, http://localhost:3000/admin) shows the same events arriving
+live: every reservation, session and payment event goes through RabbitMQ to parking-service and on over STOMP.
+Keep it open next to the driver app while reserving, parking and leaving.
+
 Optional, dead-letter queue: a message no listener can handle is kept, not lost.
 
 ```text
