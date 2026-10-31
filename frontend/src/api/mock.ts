@@ -15,6 +15,8 @@ import type {
   ParkingLocation,
   ParkingSession,
   Payment,
+  PaymentAccount,
+  PaymentMethod,
   PricingRule,
   Reservation,
   Spot,
@@ -108,6 +110,9 @@ addLocation(
 const reservations: Reservation[] = []
 const sessions: ParkingSession[] = []
 const payments: Payment[] = []
+// Like payment-service: a new driver pays by card and has 25 lei in the simulated wallet.
+const account: PaymentAccount = { driverId: DRIVER_ID, preferredMethod: 'CARD', walletBalance: 25 }
+const money = (amount: number) => Math.round(amount * 100) / 100
 const notifications: Notification[] = []
 
 /** A few past visits of the demo driver, so the history page has something to show. */
@@ -209,17 +214,21 @@ export function onMockNotification(listener: (notification: Notification) => voi
   return () => notificationListeners.delete(listener)
 }
 
-/** Like payment-service: one record per session, a retry adds an attempt to it. */
-function processPayment(session: ParkingSession) {
+/**
+ * Like payment-service: one record per session, a retry adds an attempt to it (and may switch method).
+ * The card fails at random; the wallet only when its balance is too low, and is debited otherwise.
+ */
+function processPayment(session: ParkingSession, switchTo?: PaymentMethod) {
   session.paymentStatus = 'PENDING'
   let payment = payments.find((p) => p.sessionId === session.id)
+  if (payment && switchTo) payment.method = switchTo
   if (!payment) {
     payment = {
       id: session.paymentId!,
       sessionId: session.id,
       driverId: DRIVER_ID,
       amount: session.cost,
-      method: 'CARD',
+      method: account.preferredMethod,
       status: 'PENDING',
       attempts: 0,
       createdAt: new Date().toISOString(),
@@ -229,11 +238,15 @@ function processPayment(session: ParkingSession) {
   const record = payment
   setTimeout(() => {
     // A free stay (within the grace period) has nothing to charge, so it can't fail.
-    const failed = session.cost > 0 && random() < PAYMENT_FAILURE_RATE
+    const wallet = record.method === 'WALLET'
+    const failed = session.cost > 0 && (wallet ? account.walletBalance < session.cost : random() < PAYMENT_FAILURE_RATE)
+    if (wallet && !failed) account.walletBalance = money(account.walletBalance - session.cost)
     session.paymentStatus = failed ? 'FAILED' : 'COMPLETED'
     Object.assign(record, { status: session.paymentStatus, attempts: record.attempts + 1, processedAt: new Date().toISOString() })
-    if (failed) notify('PAYMENT_FAILED', `Payment of ${session.cost.toFixed(2)} lei for ${session.spotCode} failed. Try payment again from your receipt.`)
-    else notify('PAYMENT_COMPLETED', `Paid ${session.cost.toFixed(2)} lei for parking at ${session.spotCode}, ${session.locationName}.`)
+    const amount = `${session.cost.toFixed(2)} lei`
+    if (failed && wallet) notify('PAYMENT_FAILED', `Your wallet doesn't have enough money for ${amount}. Add money or pay by card from your receipt.`)
+    else if (failed) notify('PAYMENT_FAILED', `Your card was declined for ${amount}. Try payment again from your receipt, or pay from your wallet.`)
+    else notify('PAYMENT_COMPLETED', `Paid ${amount} ${wallet ? 'from your wallet' : 'by card'} for your parking session.`)
   }, 2500)
 }
 
@@ -560,11 +573,36 @@ export const mockApi: Api = {
       return session
     }),
 
-  retryPayment: (paymentId) =>
+  retryPayment: (paymentId, method) =>
     delay(() => {
       const session = sessions.find((s) => s.paymentId === paymentId)
       if (!session) throw new ApiError(404, 'This payment no longer exists.')
-      processPayment(session)
+      if (session.paymentStatus !== 'FAILED') {
+        throw new ApiError(409, `Only a failed payment can be retried; this one is ${(session.paymentStatus ?? 'pending').toLowerCase()}.`)
+      }
+      processPayment(session, method)
+    }),
+
+  getPayment: (paymentId) =>
+    delay(() => {
+      const payment = payments.find((p) => p.id === paymentId)
+      if (!payment) throw new ApiError(404, `Payment ${paymentId} not found.`)
+      return { ...payment }
+    }),
+
+  getPaymentAccount: () => delay(() => ({ ...account })),
+
+  choosePaymentMethod: (method) =>
+    delay(() => {
+      account.preferredMethod = method
+      return { ...account }
+    }),
+
+  topUpWallet: (amount) =>
+    delay(() => {
+      if (amount < 1 || amount > 500) throw new ApiError(400, 'Add between 1 and 500 lei at a time.')
+      account.walletBalance = money(account.walletBalance + amount)
+      return { ...account }
     }),
 
   listNotifications: () => delay(() => notifications),

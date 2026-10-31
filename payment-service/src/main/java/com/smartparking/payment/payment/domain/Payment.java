@@ -52,6 +52,14 @@ public class Payment {
 		this.createdAt = createdAt;
 	}
 
+	/** "Pay by card instead": only a failed payment can change method, before it is tried again. */
+	public void switchTo(PaymentMethod newMethod) {
+		if (status != PaymentStatus.FAILED) {
+			throw new IllegalStateException("Only a failed payment can be paid another way.");
+		}
+		this.method = newMethod;
+	}
+
 	/** Only a payment that hasn't gone through can be tried (again). */
 	public void recordAttempt(boolean success, Instant at) {
 		if (status == PaymentStatus.COMPLETED) {

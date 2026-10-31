@@ -1,28 +1,33 @@
 package com.smartparking.payment.payment.processor;
 
+import com.smartparking.payment.account.domain.PaymentAccount;
+import com.smartparking.payment.account.service.PaymentAccountService;
 import com.smartparking.payment.payment.domain.Payment;
-import java.util.random.RandomGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * <b>Factory pattern: Concrete product.</b> Simulated in-app wallet payment. Fails with probability {@code failureRate}, as if the wallet balance were too low.
+ * <b>Factory pattern: Concrete product.</b> Pays from the driver's simulated wallet. The account row is locked
+ * for the payment's transaction, so two payments can't spend the same money. Fails only when the balance is
+ * too low (unlike the card, it has no random failures).
  */
 @Slf4j
 @RequiredArgsConstructor
 public class WalletPaymentProcessor implements PaymentProcessor {
 
-	private final double failureRate;
-	private final RandomGenerator random;
+	private final PaymentAccountService accounts;
 
 	@Override
 	public PaymentResult process(Payment payment) {
-		if (random.nextDouble() < failureRate) {
-			log.info("[WALLET] Not enough balance for {} lei", payment.getAmount());
-			return new PaymentResult(false, "Not enough money in the wallet.");
+		PaymentAccount account = accounts.lockForPayment(payment.getDriverId());
+		if (!account.canPay(payment.getAmount())) {
+			log.info("[WALLET] {} lei due, only {} lei in the wallet", payment.getAmount(), account.getWalletBalance());
+			return new PaymentResult(false, "Not enough money in the wallet: %s lei left, %s lei due."
+				.formatted(account.getWalletBalance(), payment.getAmount()));
 		}
-		log.info("[WALLET] Debited {} lei", payment.getAmount());
-		return new PaymentResult(true, "Wallet debited.");
+		account.debit(payment.getAmount());
+		log.info("[WALLET] Debited {} lei, {} lei left", payment.getAmount(), account.getWalletBalance());
+		return new PaymentResult(true, "Paid from the wallet.");
 	}
 
 }

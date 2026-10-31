@@ -1397,6 +1397,114 @@
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/payments?driverId={{driverId}}"
           }
+        },
+        {
+          "name": "Payment account (new driver: card, 25 lei)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const account = pm.response.json();",
+                  "pm.test('Pays by card until the driver chooses', () => pm.expect(account.preferredMethod).to.eql('CARD'));",
+                  "pm.test('Starts with the demo wallet balance', () => pm.expect(account.walletBalance).to.eql(25));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/payment-accounts/{{driverId}}"
+          }
+        },
+        {
+          "name": "Choose the wallet (Factory picks WalletPaymentProcessor)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Next payments use the wallet', () => pm.expect(pm.response.json().preferredMethod).to.eql('WALLET'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/payment-accounts/{{driverId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferredMethod\": \"WALLET\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Top up the wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Balance went up by 50 lei', () => pm.expect(pm.response.json().walletBalance).to.eql(75));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/payment-accounts/{{driverId}}/top-ups",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 50\n}"
+            }
+          }
+        },
+        {
+          "name": "Top-up over 500 lei is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().status).to.eql(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/payment-accounts/{{driverId}}/top-ups",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 600\n}"
+            }
+          }
         }
       ]
     },

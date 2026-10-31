@@ -97,6 +97,8 @@ services:
       <<: *service-env
       DB_NAME: payment_db
       PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0.2}
+      # What a new driver finds in the simulated wallet.
+      WALLET_STARTING_BALANCE: ${WALLET_STARTING_BALANCE:-25.00}
     ports:
       - "8083:8083"
     depends_on: *service-deps

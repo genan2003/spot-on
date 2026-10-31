@@ -1,14 +1,15 @@
 import type { PriceBand, PricingRule, Spot, SpotStatus, SpotType } from '../api/types'
 import { surchargeFor } from './pricing'
 
+// A non-breaking space keeps an amount and its currency on one line ("25.00 lei", never "25.00 / lei").
 export function lei(amount: number): string {
-  return `${amount.toFixed(2)} lei`
+  return `${amount.toFixed(2)}\u00a0lei`
 }
 
 /** Short price for lists: whole amounts drop the decimals ("6 lei", not "6.00 lei"). */
 function shortLei(amount: number): string {
   if (Number.isNaN(amount)) return '… lei'
-  return Number.isInteger(amount) ? `${amount} lei` : lei(amount)
+  return Number.isInteger(amount) ? `${amount}\u00a0lei` : lei(amount)
 }
 
 /** The rule in one sentence, as drivers see it: the strategy first, then any extras. */

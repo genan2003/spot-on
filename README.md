@@ -54,13 +54,14 @@ Troubleshooting:
   of that, otherwise rerun once `docker compose ps` shows every service as healthy.
 
 Settings you may want to change for a demo. Set them in the shell when starting, e.g.
-`PAYMENT_FAILURE_RATE=1 docker compose up -d payment-service` makes every payment fail:
+`PAYMENT_FAILURE_RATE=1 docker compose up -d payment-service` makes every card payment fail:
 
 | Variable | Service | Default | Effect |
 |---|---|---|---|
 | `RESERVATION_DURATION` | reservation-service | `15m` | How long a reserved spot is held |
 | `RESERVATION_REMINDER` | reservation-service | `5m` | How long before the hold ends the driver is reminded (at most half the hold) |
-| `PAYMENT_FAILURE_RATE` | payment-service | `0.2` | Share of simulated payments that fail (0 to 1) |
+| `PAYMENT_FAILURE_RATE` | payment-service | `0.2` | Share of simulated card payments that fail (0 to 1); the wallet fails only when its balance is too low |
+| `WALLET_STARTING_BALANCE` | payment-service | `25.00` | Simulated wallet balance of a new driver (lei) |
 | `NOTIFICATION_CHANNEL` | notification-service | `PUSH` | `EMAIL`, `SMS` or `PUSH` (all simulated in the logs) |
 | `RESERVATION_RATE_LIMIT` | gateway | `5` | Reservation attempts per driver in a row; then one every 60 / n seconds (429 with `Retry-After`) |
 | `PARKING_CIRCUIT_OPEN_FOR` | reservation-service | `30s` | How long the circuit breaker to parking-service stays open after repeated failures |

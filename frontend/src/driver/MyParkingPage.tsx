@@ -1,14 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Link } from 'react-router'
-import { keys, useCurrentParking, useEndSession, useNow, useRetryPayment } from '../api/queries'
+import { keys, useCurrentParking, useEndSession, useNow } from '../api/queries'
 import type { CurrentParking, ParkingSession, Reservation } from '../api/types'
-import { CheckIcon } from '../components/icons'
 import { QueryState } from '../components/QueryState'
 import { StatusLabel, StatusMark } from '../components/status'
 import { clock, duration, lei, timeOfDay } from '../lib/format'
 import { dismiss, useDismissed } from '../lib/dismissed'
 import { button } from '../lib/ui'
+import { PaymentOutcome, PayWith } from './Payment'
 import { ErrorLine, ReservationActions } from './ReservationActions'
 
 export function MyParkingPage() {
@@ -125,6 +125,7 @@ function SessionPanel({ session }: { session: ParkingSession }) {
       <p className="tabular mt-4 text-lg">
         So far: <strong>{lei(session.cost)}</strong>
       </p>
+      <PayWith costSoFar={session.cost} />
       <button type="button" className={`${button.primary} mt-6`} disabled={end.isPending} onClick={() => end.mutate(session.id)}>
         {end.isPending ? 'Ending session…' : 'End session'}
       </button>
@@ -134,7 +135,6 @@ function SessionPanel({ session }: { session: ParkingSession }) {
 }
 
 function Receipt({ session }: { session: ParkingSession }) {
-  const retry = useRetryPayment()
   const rows: [string, string][] = [
     ['Spot', session.spotCode],
     ['Car park', session.locationName],
@@ -160,26 +160,7 @@ function Receipt({ session }: { session: ParkingSession }) {
         </div>
       </dl>
       <div className="mt-4" role="status">
-        {session.paymentStatus === 'PENDING' && <p>Processing payment…</p>}
-        {session.paymentStatus === 'COMPLETED' && (
-          <p className="flex items-center gap-2 font-semibold">
-            <CheckIcon className="size-5 text-free" /> Paid
-          </p>
-        )}
-        {session.paymentStatus === 'FAILED' && (
-          <>
-            <p className="max-w-prose font-semibold">The payment didn’t go through. Your card was declined. Try again, or use another card.</p>
-            <button
-              type="button"
-              className={`${button.primary} mt-3`}
-              disabled={retry.isPending}
-              onClick={() => retry.mutate(session.paymentId!)}
-            >
-              Try payment again
-            </button>
-            <ErrorLine error={retry.error} />
-          </>
-        )}
+        <PaymentOutcome session={session} />
       </div>
       <div className="mt-8 flex flex-wrap items-center gap-4">
         <Link to="/" className={button.secondary}>

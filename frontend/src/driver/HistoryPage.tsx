@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { useHistory, useRetryPayment } from '../api/queries'
+import { useHistory, usePaymentAccount, useRetryPayment } from '../api/queries'
 import { QueryState } from '../components/QueryState'
 import { StatusMark } from '../components/status'
 import { groupByDay, historyEntries, holdText, monthSummary, paymentText, stayTimes, type HistoryEntry } from '../lib/history'
@@ -55,6 +55,9 @@ export function HistoryPage() {
 function StayRow({ entry }: { entry: Extract<HistoryEntry, { kind: 'stay' }> }) {
   const { session, payment } = entry
   const retry = useRetryPayment()
+  const account = usePaymentAccount()
+  // Retrying from a wallet that is still short would fail again, so offer the card instead (as the receipt does).
+  const walletShort = payment?.method === 'WALLET' && account.data !== undefined && account.data.walletBalance < session.cost
   return (
     <>
       <StatusMark status="OCCUPIED" className="mt-0.5" />
@@ -79,9 +82,9 @@ function StayRow({ entry }: { entry: Extract<HistoryEntry, { kind: 'stay' }> }) 
               type="button"
               className={`${button.small} mt-2`}
               disabled={retry.isPending}
-              onClick={() => retry.mutate(session.paymentId!)}
+              onClick={() => retry.mutate({ paymentId: session.paymentId!, method: walletShort ? 'CARD' : undefined })}
             >
-              Try payment again
+              {walletShort ? 'Pay by card instead' : 'Try payment again'}
             </button>
             <ErrorLine error={retry.error} />
           </>

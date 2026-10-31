@@ -1,5 +1,6 @@
 import type { History, ParkingSession, Payment, Reservation } from '../api/types'
 import { duration, lei, timeOfDay } from './format'
+import { paidText } from './payment'
 
 /**
  * One line of the driver's history: a stay (an ended session) or a hold that ended without parking
@@ -75,8 +76,6 @@ export function stayTimes(session: ParkingSession): string {
   return `${timeOfDay(session.startedAt)} to ${timeOfDay(session.endedAt!)}, ${duration(length)}`
 }
 
-const methodNames: Record<Payment['method'], string> = { CARD: 'card', WALLET: 'wallet' }
-
 /** The payment outcome in a few words. The session's status is the one the driver sees on the receipt too. */
 export function paymentText(session: ParkingSession, payment?: Payment): string {
   switch (session.paymentStatus) {
@@ -87,7 +86,7 @@ export function paymentText(session: ParkingSession, payment?: Payment): string 
     case 'COMPLETED': {
       if (session.cost === 0) return 'Free'
       if (!payment) return 'Paid'
-      const paid = `Paid by ${methodNames[payment.method]}`
+      const paid = paidText(payment.method)
       return payment.attempts > 1 ? `${paid} after ${payment.attempts} tries` : paid
     }
     default:

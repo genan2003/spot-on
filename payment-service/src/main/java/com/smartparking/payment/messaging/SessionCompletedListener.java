@@ -1,10 +1,8 @@
 package com.smartparking.payment.messaging;
 
-import com.smartparking.payment.payment.domain.PaymentMethod;
 import com.smartparking.payment.payment.service.PaymentService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,13 +16,10 @@ public class SessionCompletedListener {
 
 	private final PaymentService paymentService;
 	private final ProcessedEvents processedEvents;
-	private final PaymentMethod defaultMethod;
 
-	public SessionCompletedListener(PaymentService paymentService, ProcessedEvents processedEvents,
-			@Value("${smartparking.payment.default-method}") PaymentMethod defaultMethod) {
+	public SessionCompletedListener(PaymentService paymentService, ProcessedEvents processedEvents) {
 		this.paymentService = paymentService;
 		this.processedEvents = processedEvents;
-		this.defaultMethod = defaultMethod;
 	}
 
 	@Transactional
@@ -34,7 +29,8 @@ public class SessionCompletedListener {
 			log.debug("Skipping duplicate session.completed {}", event.eventId());
 			return;
 		}
-		paymentService.charge(event.sessionId(), event.driverId(), event.cost(), defaultMethod);
+		// The driver's chosen method decides which processor the Factory returns.
+		paymentService.charge(event.sessionId(), event.driverId(), event.cost());
 	}
 
 }

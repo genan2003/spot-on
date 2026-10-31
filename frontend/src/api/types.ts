@@ -109,13 +109,22 @@ export interface ParkingSession {
  * never both: the last receipt, or a cancelled or expired reservation, whichever is newer (an unpaid
  * receipt always wins), and only for two hours.
  */
+export type PaymentMethod = 'CARD' | 'WALLET'
+
+/** The driver's chosen payment method (payment-service's Factory picks the processor from it) and simulated wallet. */
+export interface PaymentAccount {
+  driverId: string
+  preferredMethod: PaymentMethod
+  walletBalance: number
+}
+
 /** payment-service's record of a session's payment; a retry updates the same record. */
 export interface Payment {
   id: string
   sessionId: string
   driverId: string
   amount: number
-  method: 'CARD' | 'WALLET'
+  method: PaymentMethod
   status: PaymentStatus
   /** Tries so far, including retries. */
   attempts: number

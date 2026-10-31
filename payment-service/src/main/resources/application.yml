@@ -49,5 +49,6 @@ smartparking:
   payment:
     # Share of simulated payments that fail, to demo payment.failed (0 = never, 1 = always).
     failure-rate: ${PAYMENT_FAILURE_RATE:0.2}
-    # Used for every session: there are no driver accounts with a saved method.
-    default-method: CARD
+    # Card payments fail at the rate above; the wallet fails only when its balance is too low.
+    # New drivers pay by card and get this much in their simulated wallet to try it with.
+    wallet-starting-balance: ${WALLET_STARTING_BALANCE:25.00}

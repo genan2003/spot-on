@@ -56,6 +56,18 @@ class DriverEventListenerTests {
 	}
 
 	@Test
+	void paymentMessagesSayHowTheDriverPaid() {
+		String driver = "driver-" + UUID.randomUUID();
+		publish("payment.completed", Map.of("eventId", UUID.randomUUID(), "driverId", driver, "amount", 8, "method", "WALLET"));
+		publish("payment.failed", Map.of("eventId", UUID.randomUUID(), "driverId", driver, "amount", 16, "method", "CARD"));
+
+		await().atMost(Duration.ofSeconds(10)).until(() -> notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver).size() >= 2);
+		assertThat(notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver)).extracting(Notification::getMessage)
+			.containsExactlyInAnyOrder("Paid 8.00 lei from your wallet for your parking session.",
+					"Your card was declined for 16.00 lei. Try payment again from your receipt, or pay from your wallet.");
+	}
+
+	@Test
 	void aMovedAndAnExtendedReservationAreTold() {
 		String driver = "driver-" + UUID.randomUUID();
 		publish("reservation.changed", Map.of("eventId", UUID.randomUUID(), "driverId", driver, "spotCode", "B2",

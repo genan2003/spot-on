@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from './client'
 import { subscribeToNotifications, subscribeToSpotStatus } from './live'
-import type { CurrentParking, History, NewLocation, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
+import type { CurrentParking, History, NewLocation, PaymentMethod, PaymentStatus, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
 
 export const keys = {
   locations: ['locations'] as const,
@@ -11,7 +11,31 @@ export const keys = {
   current: ['current-parking'] as const,
   notifications: ['notifications'] as const,
   history: ['history'] as const,
+  paymentAccount: ['payment-account'] as const,
+  payment: (id: string) => ['payments', id] as const,
 }
+
+/** The driver's chosen method and wallet balance. */
+export const usePaymentAccount = () => useQuery({ queryKey: keys.paymentAccount, queryFn: api.getPaymentAccount })
+
+/** One payment (its method and tries), loaded again whenever the receipt's payment status changes. */
+export const usePayment = (id: string | undefined, status: PaymentStatus | undefined) =>
+  useQuery({
+    queryKey: [...keys.payment(id ?? ''), status] as const,
+    queryFn: () => api.getPayment(id!),
+    enabled: !!id && !!status && status !== 'PENDING',
+  })
+
+function useAccountMutation<T>(fn: (input: T) => Promise<unknown>) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: fn,
+    onSettled: () => queryClient.invalidateQueries({ queryKey: keys.paymentAccount }),
+  })
+}
+
+export const useChoosePaymentMethod = () => useAccountMutation((method: PaymentMethod) => api.choosePaymentMethod(method))
+export const useTopUpWallet = () => useAccountMutation((amount: number) => api.topUpWallet(amount))
 
 export const useLocations = () => useQuery({ queryKey: keys.locations, queryFn: api.listLocations })
 
@@ -127,6 +151,8 @@ function useParkingMutation<T, R>(fn: (input: T) => Promise<R>) {
       queryClient.invalidateQueries({ queryKey: keys.locations })
       queryClient.invalidateQueries({ queryKey: keys.notifications })
       queryClient.invalidateQueries({ queryKey: keys.history })
+      queryClient.invalidateQueries({ queryKey: keys.paymentAccount })
+      queryClient.invalidateQueries({ queryKey: ['payments'] })
     },
   })
 }
@@ -139,7 +165,8 @@ export const useCancelReservation = () => useParkingMutation((id: string) => api
 export const useStartSession = () =>
   useParkingMutation(({ spotId, reservationId }: { spotId: string; reservationId?: string }) => api.startSession(spotId, reservationId))
 export const useEndSession = () => useParkingMutation((id: string) => api.endSession(id))
-export const useRetryPayment = () => useParkingMutation((paymentId: string) => api.retryPayment(paymentId))
+export const useRetryPayment = () =>
+  useParkingMutation(({ paymentId, method }: { paymentId: string; method?: PaymentMethod }) => api.retryPayment(paymentId, method))
 
 export const useCreateLocation = () => useParkingMutation((location: NewLocation) => api.createLocation(location))
 export const useUpdateLocation = (id: string) => useParkingMutation((location: NewLocation) => api.updateLocation(id, location))

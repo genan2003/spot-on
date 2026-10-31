@@ -613,8 +613,10 @@ note as NPaymentFactory
 Factory: PaymentProcessorFactory.create(method)
 Product: PaymentProcessor
 Concrete products: Card, Wallet (simulated,
-configurable failure rate)
+configurable failure rate; in payment-service
+the wallet pays from a simulated balance)
 Client: ParkingSessionFacade
+Product chosen by Driver.preferredPaymentMethod
 end note
 NPaymentFactory .. PaymentProcessorFactory
 NPaymentFactory .. PaymentProcessor

@@ -8,6 +8,8 @@ import type {
   ParkingLocation,
   ParkingSession,
   Payment,
+  PaymentAccount,
+  PaymentMethod,
   PricingRule,
   Reservation,
   Spot,
@@ -79,7 +81,14 @@ export interface Api {
   cancelReservation(id: string): Promise<void>
   startSession(spotId: string, reservationId?: string): Promise<ParkingSession>
   endSession(id: string): Promise<ParkingSession>
-  retryPayment(paymentId: string): Promise<void>
+  /** Tries a failed payment again; with a method, pays it that way instead ("Pay by card instead"). */
+  retryPayment(paymentId: string, method?: PaymentMethod): Promise<void>
+  getPayment(paymentId: string): Promise<Payment>
+  getPaymentAccount(): Promise<PaymentAccount>
+  /** Card or wallet for the next payments. */
+  choosePaymentMethod(method: PaymentMethod): Promise<PaymentAccount>
+  /** Simulated: adds money to the wallet. */
+  topUpWallet(amount: number): Promise<PaymentAccount>
   listNotifications(): Promise<Notification[]>
   /** The driver's last 50 reservations, newest first. */
   listReservations(): Promise<Reservation[]>
@@ -113,7 +122,11 @@ const httpApi: Api = {
   startSession: (spotId, reservationId) =>
     request('/parking-sessions', json('POST', { spotId, reservationId, driverId: DRIVER_ID })),
   endSession: (id) => request(`/parking-sessions/${id}/end`, json('POST')),
-  retryPayment: (paymentId) => request(`/payments/${paymentId}/retry`, json('POST')),
+  retryPayment: (paymentId, method) => request(`/payments/${paymentId}/retry`, json('POST', method ? { method } : undefined)),
+  getPayment: (paymentId) => request(`/payments/${paymentId}`),
+  getPaymentAccount: () => request(`/payment-accounts/${DRIVER_ID}`),
+  choosePaymentMethod: (method) => request(`/payment-accounts/${DRIVER_ID}`, json('PATCH', { preferredMethod: method })),
+  topUpWallet: (amount) => request(`/payment-accounts/${DRIVER_ID}/top-ups`, json('POST', { amount })),
   listNotifications: () => request(`/notifications?driverId=${DRIVER_ID}`),
   listReservations: () => request(`/reservations?driverId=${DRIVER_ID}`),
   listSessions: () => request(`/parking-sessions?driverId=${DRIVER_ID}`),
