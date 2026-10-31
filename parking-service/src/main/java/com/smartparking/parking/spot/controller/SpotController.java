@@ -1,6 +1,7 @@
 package com.smartparking.parking.spot.controller;
 
 import com.smartparking.parking.spot.dto.AddSpotsRequest;
+import com.smartparking.parking.spot.dto.BulkSpotUpdateRequest;
 import com.smartparking.parking.spot.dto.SpotResponse;
 import com.smartparking.parking.spot.dto.SpotStatusRequest;
 import com.smartparking.parking.spot.mapper.SpotMapper;
@@ -39,10 +40,19 @@ public class SpotController {
 				request.evCharging(), request.accessible()).stream().map(mapper::toResponse).toList();
 	}
 
+	/** Admin edit of one spot: its status (close or reopen) and/or its properties. */
 	@PatchMapping("/{spotId}")
-	public SpotResponse setStatus(@PathVariable UUID locationId, @PathVariable UUID spotId,
+	public SpotResponse update(@PathVariable UUID locationId, @PathVariable UUID spotId,
 			@Valid @RequestBody SpotStatusRequest request) {
-		return mapper.toResponse(spotService.setStatus(locationId, spotId, request.status()));
+		return mapper.toResponse(spotService.update(locationId, spotId, request.status(), request.type(), request.evCharging(),
+				request.accessible()));
+	}
+
+	/** Admin edit of several spots at once, e.g. "these four now have EV charging". */
+	@PatchMapping
+	public List<SpotResponse> updateSeveral(@PathVariable UUID locationId, @Valid @RequestBody BulkSpotUpdateRequest request) {
+		return spotService.changeProperties(locationId, request.spotIds(), request.type(), request.evCharging(), request.accessible())
+			.stream().map(mapper::toResponse).toList();
 	}
 
 }

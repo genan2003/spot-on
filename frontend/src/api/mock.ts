@@ -129,7 +129,13 @@ function findSpot(id: string): Spot {
 function setStatus(spot: Spot, status: SpotStatus, heldBy?: string) {
   spot.status = status
   spot.heldBy = heldBy
-  listeners.forEach((listener) => listener({ spotId: spot.id, locationId: spot.locationId, status, heldBy }))
+  broadcast(spot)
+}
+
+/** Like spot.status-changed: the spot's live state goes to every subscriber. */
+function broadcast(spot: Spot) {
+  const { id: spotId, locationId, status, heldBy, type, evCharging, accessible } = spot
+  listeners.forEach((listener) => listener({ spotId, locationId, status, heldBy, type, evCharging, accessible }))
 }
 
 function notify(kind: Notification['kind'], message: string) {
@@ -255,6 +261,20 @@ export const mockApi: Api = {
         )
       }
       return spot
+    }),
+
+  updateSpots: (locationId, spotIds, changes) =>
+    delay(() => {
+      if (spotIds.length === 0 || Object.values(changes).every((v) => v === undefined)) {
+        throw new ApiError(400, 'Pick at least one spot and one change.')
+      }
+      const edited = spotIds.map(findSpot)
+      if (edited.some((s) => s.locationId !== locationId)) throw new ApiError(404, 'Some of these spots don’t exist at this location.')
+      for (const spot of edited) {
+        Object.assign(spot, Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined)))
+        broadcast(spot)
+      }
+      return edited
     }),
 
   updatePricing: (locationId, rule) =>

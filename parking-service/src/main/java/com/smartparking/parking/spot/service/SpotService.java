@@ -10,6 +10,8 @@ import com.smartparking.parking.spot.event.SpotStatusChanged;
 import com.smartparking.parking.spot.repository.ParkingSpotRepository;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @RequiredArgsConstructor
 public class SpotService {
+
+	/** Level, zone, then number (A2 before A10), the order spot lists use everywhere. */
+	private static final Comparator<ParkingSpot> SPOT_ORDER = Comparator.comparingInt(ParkingSpot::getLevel)
+		.thenComparing(ParkingSpot::getZone)
+		.thenComparingInt(spot -> Integer.parseInt(spot.getCode().substring(spot.getZone().length())));
 
 	private final ParkingSpotRepository spotRepository;
 	private final ParkingLocationService locationService;
@@ -48,6 +55,35 @@ public class SpotService {
 	}
 
 	/** State pattern: the spot's current state decides whether it may close or reopen. */
+	/**
+	 * Admin edit of several spots' properties (type, EV charging, accessible); {@code null} keeps a property.
+	 * Every spot must belong to the location. Live clients get each change on {@code spot.status-changed}.
+	 */
+	@Transactional
+	public List<ParkingSpot> changeProperties(UUID locationId, Collection<UUID> spotIds, SpotType type, Boolean evCharging,
+			Boolean accessible) {
+		List<ParkingSpot> spots = spotRepository.findAllById(spotIds);
+		if (spots.size() != spotIds.size() || spots.stream().anyMatch(s -> !s.getLocation().getId().equals(locationId))) {
+			throw new EntityNotFoundException("Some of these spots don't exist at this location.");
+		}
+		spots.forEach(spot -> {
+			spot.changeProperties(type, evCharging, accessible);
+			eventPublisher.publishEvent(SpotStatusChanged.of(spot));
+		});
+		return spots.stream().sorted(SPOT_ORDER).toList();
+	}
+
+	/** One admin edit of one spot: properties first, then the status, in one transaction. */
+	@Transactional
+	public ParkingSpot update(UUID locationId, UUID spotId, SpotStatus status, SpotType type, Boolean evCharging, Boolean accessible) {
+		ParkingSpot spot = spotRepository.findByIdAndLocationId(spotId, locationId)
+			.orElseThrow(() -> new EntityNotFoundException("Spot " + spotId + " not found at this location."));
+		if (type != null || evCharging != null || accessible != null) {
+			changeProperties(locationId, List.of(spotId), type, evCharging, accessible);
+		}
+		return status == null ? spot : setStatus(locationId, spotId, status);
+	}
+
 	@Transactional
 	public ParkingSpot setStatus(UUID locationId, UUID spotId, SpotStatus status) {
 		ParkingSpot spot = spotRepository.findByIdAndLocationId(spotId, locationId)

@@ -9,6 +9,7 @@ import { SpotPlan } from '../components/SpotPlan'
 import { StatusLabel, StatusMark } from '../components/status'
 import { describePricing, levelName, levelsOf, spotTypeNames, statusNames } from '../lib/format'
 import { button, field } from '../lib/ui'
+import { SpotPropertiesForm } from './SpotPropertiesForm'
 
 const statuses: SpotStatus[] = ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'OUT_OF_SERVICE']
 
@@ -18,6 +19,8 @@ export function AdminLocationPage() {
   const spots = useSpots(id)
   const [level, setLevel] = useState<number>()
   const [selectedId, setSelectedId] = useState<string>()
+  // Spots ticked in the table for editing several at once.
+  const [checked, setChecked] = useState<Set<string>>(new Set())
 
   return (
     <div className="flex flex-col gap-6 p-4 lg:p-8">
@@ -44,11 +47,21 @@ export function AdminLocationPage() {
           const current = level ?? levels[0] ?? 0
           const onLevel = all.filter((s) => s.level === current)
           const selected = all.find((s) => s.id === selectedId)
+          const ticked = onLevel.filter((s) => checked.has(s.id))
 
           return (
             <>
               <Counts spots={all} />
-              {levels.length > 1 && <LevelPicker levels={levels} value={current} onChange={setLevel} />}
+              {levels.length > 1 && (
+                <LevelPicker
+                  levels={levels}
+                  value={current}
+                  onChange={(l) => {
+                    setLevel(l)
+                    setChecked(new Set())
+                  }}
+                />
+              )}
               <div className="flex flex-col gap-6 xl:flex-row">
                 <div className="min-w-0 flex-1">
                   {onLevel.length > 0 ? (
@@ -68,12 +81,16 @@ export function AdminLocationPage() {
                 <aside className="xl:w-80 xl:shrink-0">
                   {selected ? (
                     <SpotPanel key={selected.id} spot={selected} onClose={() => setSelectedId(undefined)} />
+                  ) : ticked.length > 0 ? (
+                    <SeveralSpotsPanel locationId={id} spots={ticked} onClear={() => setChecked(new Set())} />
                   ) : (
                     <AddSpotsForm locationId={id} defaultLevel={current} />
                   )}
                 </aside>
               </div>
-              {onLevel.length > 0 && <SpotTable spots={onLevel} selectedId={selectedId} onSelect={setSelectedId} />}
+              {onLevel.length > 0 && (
+                <SpotTable spots={onLevel} selectedId={selectedId} onSelect={setSelectedId} checked={checked} onCheck={setChecked} />
+              )}
             </>
           )
         }}
@@ -104,9 +121,6 @@ function SpotPanel({ spot, onClose }: { spot: Spot; onClose: () => void }) {
   const rows: [string, string][] = [
     ['Level', levelName(spot.level)],
     ['Zone', spot.zone],
-    ['Type', spotTypeNames[spot.type]],
-    ['EV charging', spot.evCharging ? 'Yes' : 'No'],
-    ['Accessible', spot.accessible ? 'Yes' : 'No'],
   ]
   // A reserved spot has no car in it yet, so it can be closed; its reservation is cancelled.
   const canClose = spot.status === 'AVAILABLE' || spot.status === 'RESERVED'
@@ -136,6 +150,9 @@ function SpotPanel({ spot, onClose }: { spot: Spot; onClose: () => void }) {
         ))}
       </dl>
       <div className="mt-4">
+        <SpotPropertiesForm locationId={spot.locationId} spots={[spot]} />
+      </div>
+      <div className="mt-4 border-t border-hairline pt-4">
         {canClose && !confirming && (
           <button
             type="button"
@@ -259,14 +276,49 @@ function AddSpotsForm({ locationId, defaultLevel }: { locationId: string; defaul
   )
 }
 
-function SpotTable({ spots, selectedId, onSelect }: { spots: Spot[]; selectedId?: string; onSelect: (id: string) => void }) {
+function SpotTable({
+  spots,
+  selectedId,
+  onSelect,
+  checked,
+  onCheck,
+}: {
+  spots: Spot[]
+  selectedId?: string
+  onSelect: (id: string) => void
+  checked: Set<string>
+  onCheck: (checked: Set<string>) => void
+}) {
+  const allChecked = spots.every((s) => checked.has(s.id))
+  const someChecked = spots.some((s) => checked.has(s.id))
+  function toggle(id: string) {
+    const next = new Set(checked)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onCheck(next)
+  }
   const sorted = [...spots].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
   return (
     <div className="overflow-x-auto bg-surface">
       <table className="w-full text-left text-sm">
-        <caption className="p-4 text-left text-lg font-semibold">All spots on this level</caption>
+        <caption className="p-4 text-left">
+          <span className="block text-lg font-semibold">All spots on this level</span>
+          <span className="block text-sm text-ink-muted">Tick several spots to change their type, EV charging or access together.</span>
+        </caption>
         <thead className="border-b-2 border-ink">
           <tr>
+            <th scope="col" className="w-12 px-4 py-2">
+              <input
+                type="checkbox"
+                className="size-5 accent-sign"
+                aria-label="Select every spot on this level"
+                checked={allChecked}
+                ref={(box) => {
+                  if (box) box.indeterminate = someChecked && !allChecked
+                }}
+                onChange={() => onCheck(allChecked ? new Set() : new Set(spots.map((s) => s.id)))}
+              />
+            </th>
             {['Spot', 'Zone', 'Type', 'EV charging', 'Accessible', 'Status'].map((h) => (
               <th key={h} scope="col" className="px-4 py-2 font-semibold">
                 {h}
@@ -276,7 +328,16 @@ function SpotTable({ spots, selectedId, onSelect }: { spots: Spot[]; selectedId?
         </thead>
         <tbody className="divide-y divide-hairline">
           {sorted.map((spot) => (
-            <tr key={spot.id} className={spot.id === selectedId ? 'bg-concrete' : ''}>
+            <tr key={spot.id} className={spot.id === selectedId || checked.has(spot.id) ? 'bg-concrete' : ''}>
+              <td className="px-4 py-1">
+                <input
+                  type="checkbox"
+                  className="size-5 accent-sign"
+                  aria-label={`Select spot ${spot.code}`}
+                  checked={checked.has(spot.id)}
+                  onChange={() => toggle(spot.id)}
+                />
+              </td>
               <th scope="row" className="px-4 py-1">
                 <button type="button" onClick={() => onSelect(spot.id)} className="min-h-9 font-bold text-sign hover:underline">
                   {spot.code}
@@ -294,5 +355,23 @@ function SpotTable({ spots, selectedId, onSelect }: { spots: Spot[]; selectedId?
         </tbody>
       </table>
     </div>
+  )
+}
+
+/** Shown instead of the add-spots form while spots are ticked in the table. */
+function SeveralSpotsPanel({ locationId, spots, onClear }: { locationId: string; spots: Spot[]; onClear: () => void }) {
+  return (
+    <section aria-labelledby="several-spots-title" className="flex flex-col gap-3 bg-surface p-4">
+      <div className="flex items-start justify-between gap-3">
+        <h2 id="several-spots-title" className="text-lg font-semibold">
+          {spots.length} {spots.length === 1 ? 'spot' : 'spots'} selected
+        </h2>
+        <button type="button" onClick={onClear} className={button.small}>
+          Clear selection
+        </button>
+      </div>
+      <p className="text-sm text-ink-muted">{spots.map((s) => s.code).join(', ')}</p>
+      <SpotPropertiesForm locationId={locationId} spots={spots} />
+    </section>
   )
 }

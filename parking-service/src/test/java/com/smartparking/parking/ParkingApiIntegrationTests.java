@@ -175,6 +175,60 @@ class ParkingApiIntegrationTests {
 	}
 
 	@Test
+	void adminEditsTheSpotsProperties() throws Exception {
+		String locationId = createLocation("Editing spots");
+		String first = addSpots(locationId, "E", 3);
+		String body = mvc.perform(get("/api/v1/parking-locations/{id}/spots", locationId)).andReturn().getResponse().getContentAsString();
+		String second = JsonPath.read(body, "$[1].id");
+		String third = JsonPath.read(body, "$[2].id");
+
+		// One spot: give it a charger; what isn't sent stays as it was.
+		send(patch("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, first), "{\"evCharging\":true}")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.evCharging").value(true))
+			.andExpect(jsonPath("$.accessible").value(false))
+			.andExpect(jsonPath("$.type").value("STANDARD"))
+			.andExpect(jsonPath("$.status").value("AVAILABLE"));
+		// Live clients see the new property too.
+		verify(messagingTemplate, timeout(5000)).convertAndSend(eq("/topic/spot-status"),
+				argThat((Object e) -> e instanceof SpotStatusChanged c && c.spotId().toString().equals(first) && c.evCharging()));
+
+		// Several spots at once.
+		send(patch("/api/v1/parking-locations/{id}/spots", locationId), """
+				{"spotIds":["%s","%s"],"type":"LARGE","accessible":true}""".formatted(third, second))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(2))
+			.andExpect(jsonPath("$[0].code").value("E2"))
+			.andExpect(jsonPath("$[0].type").value("LARGE"))
+			.andExpect(jsonPath("$[1].accessible").value(true))
+			.andExpect(jsonPath("$[1].evCharging").value(false));
+
+		// Status and properties in one request.
+		send(patch("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, first), "{\"status\":\"OUT_OF_SERVICE\",\"type\":\"COMPACT\"}")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("OUT_OF_SERVICE"))
+			.andExpect(jsonPath("$.type").value("COMPACT"));
+	}
+
+	@Test
+	void spotEditsThatMakeNoSenseAreRejected() throws Exception {
+		String locationId = createLocation("Bad edits");
+		String spot = addSpots(locationId, "X", 1);
+		String elsewhere = addSpots(createLocation("Other garage"), "Y", 1);
+
+		send(patch("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, spot), "{}").andExpect(status().isBadRequest());
+		send(patch("/api/v1/parking-locations/{id}/spots", locationId), "{\"spotIds\":[],\"evCharging\":true}")
+			.andExpect(status().isBadRequest());
+		send(patch("/api/v1/parking-locations/{id}/spots", locationId), "{\"spotIds\":[\"%s\"]}".formatted(spot))
+			.andExpect(status().isBadRequest());
+		// A spot of another car park can't be edited from this one.
+		send(patch("/api/v1/parking-locations/{id}/spots", locationId), "{\"spotIds\":[\"%s\",\"%s\"],\"evCharging\":true}"
+				.formatted(spot, elsewhere))
+			.andExpect(status().isNotFound());
+		mvc.perform(get("/api/v1/parking-locations/{id}/spots", locationId)).andExpect(jsonPath("$[0].evCharging").value(false));
+	}
+
+	@Test
 	void adminClosesAndReopensASpot() throws Exception {
 		String locationId = createLocation("Closing test");
 		String spotId = addSpots(locationId, "B", 2);

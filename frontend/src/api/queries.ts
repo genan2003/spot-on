@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from './client'
 import { subscribeToSpotStatus } from './live'
-import type { CurrentParking, NewLocation, NewSpots, PricingRule, Spot, SpotStatus } from './types'
+import type { CurrentParking, NewLocation, NewSpots, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
 
 export const keys = {
   locations: ['locations'] as const,
@@ -41,7 +41,18 @@ export function useLiveSpotStatus() {
     () =>
       subscribeToSpotStatus((event) => {
         queryClient.setQueryData<Spot[]>(keys.spots(event.locationId), (spots) =>
-          spots?.map((s) => (s.id === event.spotId ? { ...s, status: event.status, heldBy: event.heldBy } : s)),
+          spots?.map((s) =>
+            s.id === event.spotId
+              ? {
+                  ...s,
+                  status: event.status,
+                  heldBy: event.heldBy,
+                  type: event.type ?? s.type,
+                  evCharging: event.evCharging ?? s.evCharging,
+                  accessible: event.accessible ?? s.accessible,
+                }
+              : s,
+          ),
         )
         // A refetch started before this change was committed (e.g. right after "Cancel reservation",
         // while the release event was still on its way) would land afterwards and put the old status
@@ -90,4 +101,8 @@ export const useCreateLocation = () => useParkingMutation((location: NewLocation
 export const useAddSpots = (locationId: string) => useParkingMutation((spots: NewSpots) => api.addSpots(locationId, spots))
 export const useSetSpotStatus = (locationId: string) =>
   useParkingMutation(({ spotId, status }: { spotId: string; status: SpotStatus }) => api.setSpotStatus(locationId, spotId, status))
+export const useUpdateSpots = (locationId: string) =>
+  useParkingMutation(({ spotIds, changes }: { spotIds: string[]; changes: SpotPropertyChanges }) =>
+    api.updateSpots(locationId, spotIds, changes),
+  )
 export const useUpdatePricing = (locationId: string) => useParkingMutation((rule: PricingRule) => api.updatePricing(locationId, rule))

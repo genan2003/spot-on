@@ -10,6 +10,7 @@ import type {
   PricingRule,
   Reservation,
   Spot,
+  SpotPropertyChanges,
   SpotStatus,
 } from './types'
 
@@ -51,6 +52,8 @@ export interface Api {
   createLocation(location: NewLocation): Promise<ParkingLocation>
   addSpots(locationId: string, spots: NewSpots): Promise<Spot[]>
   setSpotStatus(locationId: string, spotId: string, status: SpotStatus): Promise<Spot>
+  /** Changes the properties of one or more spots of a location. */
+  updateSpots(locationId: string, spotIds: string[], changes: SpotPropertyChanges): Promise<Spot[]>
   updatePricing(locationId: string, rule: PricingRule): Promise<ParkingLocation>
   getCurrentParking(): Promise<CurrentParking>
   reserveSpot(spotId: string): Promise<Reservation>
@@ -73,6 +76,10 @@ const httpApi: Api = {
   addSpots: (locationId, spots) => request(`/parking-locations/${locationId}/spots`, json('POST', spots)),
   setSpotStatus: (locationId, spotId, status) =>
     request(`/parking-locations/${locationId}/spots/${spotId}`, json('PATCH', { status })),
+  updateSpots: (locationId, spotIds, changes) =>
+    spotIds.length === 1
+      ? request<Spot>(`/parking-locations/${locationId}/spots/${spotIds[0]}`, json('PATCH', changes)).then((spot) => [spot])
+      : request(`/parking-locations/${locationId}/spots`, json('PATCH', { spotIds, ...changes })),
   updatePricing: (locationId, rule) => request(`/parking-locations/${locationId}/pricing-rule`, json('PUT', rule)),
   getCurrentParking: () => request(`/reservations/current?driverId=${DRIVER_ID}`),
   reserveSpot: (spotId) => request('/reservations', json('POST', { spotId, driverId: DRIVER_ID })),

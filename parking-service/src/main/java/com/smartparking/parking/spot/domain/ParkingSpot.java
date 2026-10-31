@@ -81,6 +81,22 @@ public class ParkingSpot {
 		this.accessible = accessible;
 	}
 
+	/**
+	 * Admin edit of the spot's properties; {@code null} keeps a property as it is. Allowed in any state:
+	 * a running session keeps the bay it was priced with (reservation-service copied it at entry).
+	 */
+	public void changeProperties(SpotType newType, Boolean newEvCharging, Boolean newAccessible) {
+		if (newType != null) {
+			type = newType;
+		}
+		if (newEvCharging != null) {
+			evCharging = newEvCharging;
+		}
+		if (newAccessible != null) {
+			accessible = newAccessible;
+		}
+	}
+
 	public void reserve(String driverId, UUID reservationId) {
 		state.reserve(this);
 		hold(driverId, reservationId);

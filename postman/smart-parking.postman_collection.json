@@ -273,6 +273,97 @@
           }
         },
         {
+          "name": "Edit spot properties",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const spot = pm.response.json();",
+                  "pm.test('A3 now has a charger and is accessible', () => { pm.expect(spot.evCharging).to.be.true; pm.expect(spot.accessible).to.be.true; });",
+                  "pm.test('What was not sent stays the same', () => { pm.expect(spot.type).to.eql('STANDARD'); pm.expect(spot.status).to.eql('AVAILABLE'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots/{{spot3Id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"evCharging\": true,\n  \"accessible\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Edit several spots at once",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const spots = pm.response.json();",
+                  "pm.test('Both spots are large', () => { pm.expect(spots.map(s => s.code)).to.eql(['A2', 'A3']); spots.forEach(s => pm.expect(s.type).to.eql('LARGE')); });",
+                  "pm.test('Earlier edits kept', () => pm.expect(spots[1].evCharging).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotIds\": [\n    \"{{spot2Id}}\",\n    \"{{spot3Id}}\"\n  ],\n  \"type\": \"LARGE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Spot edit that changes nothing is rejected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Body is a ProblemDetail', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots/{{spot3Id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
           "name": "List spots",
           "event": [
             {

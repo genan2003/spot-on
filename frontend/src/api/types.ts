@@ -116,12 +116,25 @@ export interface Notification {
   sentAt: string
 }
 
-/** Payload of the spot.status-changed event pushed over WebSocket. */
+/**
+ * Payload of the spot.status-changed event pushed over WebSocket: the spot's live state, sent when its
+ * status changes or an admin edits its properties.
+ */
 export interface SpotStatusChanged {
   spotId: string
   locationId: string
   status: SpotStatus
   heldBy?: string
+  type?: SpotType
+  evCharging?: boolean
+  accessible?: boolean
+}
+
+/** Admin edit of a spot's properties; a missing field stays as it is. */
+export interface SpotPropertyChanges {
+  type?: SpotType
+  evCharging?: boolean
+  accessible?: boolean
 }
 
 export interface NewLocation {
