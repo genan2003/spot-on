@@ -151,6 +151,14 @@ function activeReservation(): Reservation | undefined {
   return reservations.find((r) => r.status === 'ACTIVE')
 }
 
+/** Only an active reservation whose hold time hasn't run out can be moved or extended. */
+function changeableReservation(id: string): Reservation {
+  const reservation = reservations.find((r) => r.id === id)
+  if (!reservation || reservation.status !== 'ACTIVE') throw new ApiError(409, 'This reservation has already ended.')
+  if (new Date(reservation.expiresAt).getTime() <= Date.now()) throw new ApiError(409, 'This reservation’s hold time is over.')
+  return reservation
+}
+
 function activeSession(): ParkingSession | undefined {
   return sessions.find((s) => s.status === 'ACTIVE')
 }
@@ -277,10 +285,40 @@ export const mockApi: Api = {
         status: 'ACTIVE',
         createdAt: now.toISOString(),
         expiresAt: new Date(now.getTime() + RESERVATION_MINUTES * 60_000).toISOString(),
+        extended: false,
       }
       reservations.push(reservation)
       setStatus(spot, 'RESERVED', DRIVER_ID)
       notify('RESERVATION_CREATED', `${spot.code} at ${location.name} is held for you until ${timeOfDay(reservation.expiresAt)}.`)
+      return reservation
+    }),
+
+  // Same rules and wording as reservation-service.
+  moveReservation: (id, spotId) =>
+    delay(() => {
+      const reservation = changeableReservation(id)
+      if (reservation.spotId === spotId) throw new ApiError(409, `Your reservation is already for ${reservation.spotCode}.`)
+      const spot = findSpot(spotId)
+      if (spot.status !== 'AVAILABLE') throw new ApiError(409, `${spot.code} is no longer free.`)
+      const previous = findSpot(reservation.spotId)
+      const location = findLocation(spot.locationId)
+      setStatus(spot, 'RESERVED', DRIVER_ID)
+      Object.assign(reservation, { spotId, spotCode: spot.code, locationId: location.id, locationName: location.name })
+      setStatus(previous, 'AVAILABLE')
+      notify(
+        'RESERVATION_CHANGED',
+        `Your reservation moved from ${previous.code} to ${spot.code}. It is held until ${timeOfDay(reservation.expiresAt)}.`,
+      )
+      return reservation
+    }),
+
+  extendReservation: (id) =>
+    delay(() => {
+      const reservation = changeableReservation(id)
+      if (reservation.extended) throw new ApiError(409, 'You have already extended this reservation once.')
+      reservation.expiresAt = new Date(new Date(reservation.expiresAt).getTime() + RESERVATION_MINUTES * 60_000).toISOString()
+      reservation.extended = true
+      notify('RESERVATION_CHANGED', `${reservation.spotCode} is now held for you until ${timeOfDay(reservation.expiresAt)}.`)
       return reservation
     }),
 

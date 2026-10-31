@@ -251,7 +251,8 @@
                   "pm.test('Three spots numbered A1-A3', () => pm.expect(spots.map(s => s.code)).to.eql(['A1', 'A2', 'A3']));",
                   "pm.test('All free', () => spots.forEach(s => pm.expect(s.status).to.eql('AVAILABLE')));",
                   "pm.environment.set('spotId', spots[0].id);",
-                  "pm.environment.set('spot2Id', spots[1].id);"
+                  "pm.environment.set('spot2Id', spots[1].id);",
+                  "pm.environment.set('spot3Id', spots[2].id);"
                 ]
               }
             }
@@ -594,7 +595,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));",
-                  "pm.environment.set('reservationId', pm.response.json().id);"
+                  "pm.environment.set('reservationId', pm.response.json().id);",
+                  "pm.environment.set('reservationExpiresAt', pm.response.json().expiresAt);"
                 ]
               }
             }
@@ -612,6 +614,184 @@
               "mode": "raw",
               "raw": "{\n  \"spotId\": \"{{spotId}}\",\n  \"driverId\": \"{{driverId}}\"\n}"
             }
+          }
+        },
+        {
+          "name": "Move reservation to another spot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Now holds A3', () => { pm.expect(body.spotId).to.eql(pm.environment.get('spot3Id')); pm.expect(body.spotCode).to.eql('A3'); });",
+                  "pm.test('Hold time unchanged', () => pm.expect(new Date(body.expiresAt).getTime()).to.eql(new Date(pm.environment.get('reservationExpiresAt')).getTime()));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spot3Id}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Previous spot freed by reservation.changed",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 300);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventually consistent: the change arrives through RabbitMQ, so retry for a few seconds.",
+                  "let ok = false;",
+                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (body.find(s => s.id === pm.environment.get('spotId')).status === 'AVAILABLE' && body.find(s => s.id === pm.environment.get('spot3Id')).status === 'RESERVED'); } catch (e) { ok = false; }",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (!ok && tries < 20) {",
+                  "    pm.collectionVariables.set('tries', tries + 1);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "    pm.collectionVariables.set('tries', 0);",
+                  "    pm.test('Arrived through RabbitMQ', () => pm.expect(ok).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots"
+          }
+        },
+        {
+          "name": "Moving to the same spot is a conflict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Says why', () => pm.expect(pm.response.json().detail).to.eql('Your reservation is already for A3.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spot3Id}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Move reservation back",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Holds A1 again', () => pm.expect(pm.response.json().spotCode).to.eql('A1'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"spotId\": \"{{spotId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Extend reservation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Marked as extended', () => pm.expect(body.extended).to.be.true);",
+                  "pm.test('Held 15 minutes longer', () => pm.expect(new Date(body.expiresAt) - new Date(pm.environment.get('reservationExpiresAt'))).to.eql(15 * 60 * 1000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}/extend",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        {
+          "name": "Extending twice is a conflict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Says why', () => pm.expect(pm.response.json().detail).to.eql('You have already extended this reservation once.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/reservations/{{reservationId}}/extend",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
           }
         }
       ]
@@ -990,7 +1170,7 @@
                 "exec": [
                   "// Eventually consistent: the change arrives through RabbitMQ, so retry for a few seconds.",
                   "let ok = false;",
-                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (['RESERVATION_CREATED', 'RESERVATION_CANCELLED', 'SESSION_COMPLETED'].every(k => body.some(n => n.kind === k)) && body.some(n => n.kind.startsWith('PAYMENT_'))); } catch (e) { ok = false; }",
+                  "try { const body = pm.response.json(); ok = pm.response.code === 200 && (['RESERVATION_CREATED', 'RESERVATION_CHANGED', 'RESERVATION_CANCELLED', 'SESSION_COMPLETED'].every(k => body.some(n => n.kind === k)) && body.some(n => n.kind.startsWith('PAYMENT_'))); } catch (e) { ok = false; }",
                   "const tries = Number(pm.collectionVariables.get('tries') || 0);",
                   "if (!ok && tries < 20) {",
                   "    pm.collectionVariables.set('tries', tries + 1);",

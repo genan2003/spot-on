@@ -1,13 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Link } from 'react-router'
-import { keys, useCancelReservation, useCurrentParking, useEndSession, useNow, useRetryPayment, useStartSession } from '../api/queries'
+import { keys, useCurrentParking, useEndSession, useNow, useRetryPayment } from '../api/queries'
 import type { ParkingSession, Reservation } from '../api/types'
 import { CheckIcon } from '../components/icons'
 import { QueryState } from '../components/QueryState'
 import { StatusLabel, StatusMark } from '../components/status'
 import { clock, duration, lei, timeOfDay } from '../lib/format'
 import { button } from '../lib/ui'
+import { ErrorLine, ReservationActions } from './ReservationActions'
 
 export function MyParkingPage() {
   const current = useCurrentParking()
@@ -36,20 +37,9 @@ export function MyParkingPage() {
   )
 }
 
-function ErrorLine({ error }: { error: Error | null }) {
-  if (!error) return null
-  return (
-    <p role="alert" className="mt-3 border-l-4 border-occupied pl-3 font-semibold">
-      {error.message}
-    </p>
-  )
-}
-
 function ReservationPanel({ reservation }: { reservation: Reservation }) {
   const now = useNow()
   const queryClient = useQueryClient()
-  const cancel = useCancelReservation()
-  const start = useStartSession()
   const left = new Date(reservation.expiresAt).getTime() - now
   const expired = left <= 0
 
@@ -70,20 +60,9 @@ function ReservationPanel({ reservation }: { reservation: Reservation }) {
         {expired ? '0:00' : clock(left)}
       </p>
       <p className="text-ink-muted">Until {timeOfDay(reservation.expiresAt)}. After that the spot is released.</p>
-      <div className="mt-6 flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          className={button.primary}
-          disabled={start.isPending || expired}
-          onClick={() => start.mutate({ spotId: reservation.spotId, reservationId: reservation.id })}
-        >
-          {start.isPending ? 'Starting session…' : 'Start session'}
-        </button>
-        <button type="button" className={button.quiet} disabled={cancel.isPending} onClick={() => cancel.mutate(reservation.id)}>
-          {cancel.isPending ? 'Cancelling…' : 'Cancel reservation'}
-        </button>
+      <div className="mt-6">
+        <ReservationActions reservation={reservation} showMove />
       </div>
-      <ErrorLine error={cancel.error ?? start.error} />
     </section>
   )
 }

@@ -39,13 +39,14 @@ public class MessagingConfig {
 		return new TopicExchange(EXCHANGE);
 	}
 
-	/** Events that end a reservation or session, i.e. free a spot. */
+	/** Events that end a reservation or session, or move a reservation away from a spot: all free a spot. */
 	@Bean
 	Declarables spotHoldsQueue(TopicExchange parkingEventsExchange) {
 		Queue queue = QueueBuilder.durable(SPOT_HOLDS_QUEUE).build();
 		return new Declarables(queue,
 				BindingBuilder.bind(queue).to(parkingEventsExchange).with("reservation.cancelled"),
 				BindingBuilder.bind(queue).to(parkingEventsExchange).with("reservation.expired"),
+				BindingBuilder.bind(queue).to(parkingEventsExchange).with("reservation.changed"),
 				BindingBuilder.bind(queue).to(parkingEventsExchange).with("session.completed"));
 	}
 

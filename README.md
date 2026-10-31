@@ -72,11 +72,11 @@ using the app:
 
 | Queue | Consumer | Receives |
 |---|---|---|
-| `parking.spot-holds` | parking-service | `reservation.cancelled`, `reservation.expired`, `session.completed` (frees the spot) |
+| `parking.spot-holds` | parking-service | `reservation.cancelled`, `reservation.expired`, `reservation.changed` (a moved reservation), `session.completed` (frees the spot) |
 | `reservation.payment-results` | reservation-service | `payment.completed`, `payment.failed` (updates the receipt) |
 | `payment.session-completed` | payment-service | `session.completed` (charges the driver) |
 | `notification.events` | notification-service | reservation, session and payment events |
-| `reservation.expiry-delay` | — | one message per reservation; when its TTL runs out it moves to `reservation.expiry` |
+| `reservation.expiry-delay` | — | one message per reservation (two if it was extended); when its TTL runs out it moves to `reservation.expiry` |
 
 To see a queue hold messages, stop a consumer (`docker compose stop notification-service`), reserve and
 cancel a spot, and start it again: the waiting events are delivered and the notifications appear.

@@ -54,6 +54,10 @@ export interface Api {
   updatePricing(locationId: string, rule: PricingRule): Promise<ParkingLocation>
   getCurrentParking(): Promise<CurrentParking>
   reserveSpot(spotId: string): Promise<Reservation>
+  /** Moves the reservation to another free spot; the hold time stays the same. */
+  moveReservation(id: string, spotId: string): Promise<Reservation>
+  /** Holds the spot one more hold time; allowed once. */
+  extendReservation(id: string): Promise<Reservation>
   cancelReservation(id: string): Promise<void>
   startSession(spotId: string, reservationId?: string): Promise<ParkingSession>
   endSession(id: string): Promise<ParkingSession>
@@ -72,6 +76,8 @@ const httpApi: Api = {
   updatePricing: (locationId, rule) => request(`/parking-locations/${locationId}/pricing-rule`, json('PUT', rule)),
   getCurrentParking: () => request(`/reservations/current?driverId=${DRIVER_ID}`),
   reserveSpot: (spotId) => request('/reservations', json('POST', { spotId, driverId: DRIVER_ID })),
+  moveReservation: (id, spotId) => request(`/reservations/${id}`, json('PATCH', { spotId })),
+  extendReservation: (id) => request(`/reservations/${id}/extend`, json('POST')),
   cancelReservation: (id) => request(`/reservations/${id}`, json('DELETE')),
   startSession: (spotId, reservationId) =>
     request('/parking-sessions', json('POST', { spotId, reservationId, driverId: DRIVER_ID })),

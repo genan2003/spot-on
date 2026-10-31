@@ -2,11 +2,12 @@ import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { DRIVER_ID } from '../api/driver'
 import { ApiError } from '../api/errors'
-import { useCancelReservation, useCurrentParking, useLocation, useNow, useReserveSpot, useStartSession } from '../api/queries'
+import { useCurrentParking, useLocation, useMoveReservation, useNow, useReserveSpot, useStartSession } from '../api/queries'
 import type { Spot } from '../api/types'
 import { StatusLabel } from '../components/status'
-import { clock, describeSurcharge, levelName, spotTypeNames } from '../lib/format'
+import { clock, describeSurcharge, levelName, spotTypeNames, timeOfDay } from '../lib/format'
 import { button } from '../lib/ui'
+import { ReservationActions } from './ReservationActions'
 
 /** Details and actions for the selected spot, as a sheet over the bottom of the screen. */
 export function SpotSheet({ spot, onClose }: { spot: Spot; onClose: () => void }) {
@@ -56,10 +57,10 @@ function SpotActions({ spot }: { spot: Spot }) {
   const current = useCurrentParking()
   const reserve = useReserveSpot()
   const start = useStartSession()
-  const cancel = useCancelReservation()
+  const move = useMoveReservation()
   const now = useNow()
 
-  const error = [reserve.error, start.error, cancel.error].find(Boolean)
+  const error = [reserve.error, start.error, move.error].find(Boolean)
   const errorText =
     error instanceof ApiError && error.status === 409
       ? `Someone else took ${spot.code} a moment ago. Pick another free spot.`
@@ -78,18 +79,8 @@ function SpotActions({ spot }: { spot: Spot }) {
         <p className="tabular text-lg">
           Held for you for <strong>{clock(new Date(reservation.expiresAt).getTime() - now)}</strong>
         </p>
-        <div className="mt-4 flex flex-wrap items-center gap-4">
-          <button
-            type="button"
-            className={button.primary}
-            disabled={start.isPending}
-            onClick={() => start.mutate({ spotId: spot.id, reservationId: reservation.id }, { onSuccess: () => navigate('/parking') })}
-          >
-            {start.isPending ? 'Starting session…' : 'Start session'}
-          </button>
-          <button type="button" className={button.quiet} disabled={cancel.isPending} onClick={() => cancel.mutate(reservation.id)}>
-            Cancel reservation
-          </button>
+        <div className="mt-4">
+          <ReservationActions reservation={reservation} onStarted={() => navigate('/parking')} />
         </div>
       </div>
     )
@@ -99,12 +90,32 @@ function SpotActions({ spot }: { spot: Spot }) {
         You’re parked here. <Link to="/parking" className="font-semibold text-sign hover:underline">Go to my parking</Link>
       </p>
     )
-  } else if (spot.status === 'AVAILABLE' && (reservation || session)) {
+  } else if (spot.status === 'AVAILABLE' && reservation) {
+    body = (
+      <>
+        <p className="max-w-prose">
+          You have {reservation.spotCode} reserved. Move your reservation here instead; it stays held until{' '}
+          {timeOfDay(reservation.expiresAt)}.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            className={button.primary}
+            disabled={move.isPending}
+            onClick={() => move.mutate({ id: reservation.id, spotId: spot.id })}
+          >
+            {move.isPending ? 'Moving reservation…' : 'Move reservation here'}
+          </button>
+          <Link to="/parking" className={button.quiet}>
+            Go to my parking
+          </Link>
+        </div>
+      </>
+    )
+  } else if (spot.status === 'AVAILABLE' && session) {
     body = (
       <p className="max-w-prose">
-        {reservation
-          ? `You already have ${reservation.spotCode} reserved. Cancel that reservation to reserve this spot instead.`
-          : `You’re parked at ${session!.spotCode}. End that session before reserving another spot.`}{' '}
+        You’re parked at {session.spotCode}. End that session before reserving another spot.{' '}
         <Link to="/parking" className="font-semibold text-sign hover:underline">Go to my parking</Link>
       </p>
     )

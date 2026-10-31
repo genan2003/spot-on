@@ -5,10 +5,12 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -146,6 +148,50 @@ class ReservationFlowIntegrationTests {
 	}
 
 	@Test
+	void movingAndExtendingAReservation() throws Exception {
+		String reservationId = id(reserve(spot, driver));
+		String expiresAt = read(mvc.perform(get("/api/v1/reservations/{id}", reservationId)), "$.expiresAt");
+		UUID other = UUID.randomUUID();
+		when(parkingClient.reserveSpot(eq(other), eq(driver), eq(UUID.fromString(reservationId))))
+			.thenReturn(new HeldSpot(other, "B2", LOCATION, "Central Garage", "RESERVED", driver));
+
+		json(patch("/api/v1/reservations/{id}", reservationId), "{\"spotId\":\"%s\"}".formatted(other))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.spotId").value(other.toString()))
+			.andExpect(jsonPath("$.spotCode").value("B2"))
+			.andExpect(jsonPath("$.expiresAt").value(expiresAt));
+		// parking-service frees the previous spot from the event, which names it.
+		String moved = events.await("reservation.changed", reservationId);
+		assertThat(PublishedEvents.<String>read(moved, "$.previousSpotId")).isEqualTo(spot.toString());
+		assertThat(PublishedEvents.<String>read(moved, "$.previousSpotCode")).isEqualTo("A1");
+		verify(parkingClient, never()).releaseSpotIfHeld(any(), any());
+
+		json(patch("/api/v1/reservations/{id}", reservationId), "{\"spotId\":\"%s\"}".formatted(other))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value("Your reservation is already for B2."));
+
+		mvc.perform(post("/api/v1/reservations/{id}/extend", reservationId))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.extended").value(true))
+			.andExpect(jsonPath("$.expiresAt").value(Instant.parse(expiresAt).plus(Duration.ofMinutes(15)).toString()));
+		mvc.perform(post("/api/v1/reservations/{id}/extend", reservationId))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value("You have already extended this reservation once."));
+	}
+
+	@Test
+	void aReservationThatEndedCannotBeMoved() throws Exception {
+		String reservationId = id(reserve(spot, driver));
+		mvc.perform(delete("/api/v1/reservations/{id}", reservationId)).andExpect(status().isNoContent());
+
+		json(patch("/api/v1/reservations/{id}", reservationId), "{\"spotId\":\"%s\"}".formatted(UUID.randomUUID()))
+			.andExpect(status().isConflict());
+		// Rejected before asking parking-service (the one call is the original reservation), so nothing to give back.
+		verify(parkingClient, times(1)).reserveSpot(any(), any(), eq(UUID.fromString(reservationId)));
+		verify(parkingClient, never()).releaseSpotIfHeld(any(), any());
+	}
+
+	@Test
 	void overdueReservationsExpire() throws Exception {
 		String reservationId = id(reserve(spot, driver));
 
@@ -184,7 +230,11 @@ class ReservationFlowIntegrationTests {
 	}
 
 	private static String id(ResultActions result) throws Exception {
-		return JsonPath.read(result.andReturn().getResponse().getContentAsString(), "$.id");
+		return read(result, "$.id");
+	}
+
+	private static String read(ResultActions result, String path) throws Exception {
+		return JsonPath.read(result.andReturn().getResponse().getContentAsString(), path);
 	}
 
 }

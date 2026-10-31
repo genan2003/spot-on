@@ -4,6 +4,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.Version;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.AccessLevel;
@@ -42,6 +44,16 @@ public class Reservation {
 
 	private Instant expiresAt;
 
+	/** A reservation can be extended once; then the driver has to start the session or let it go. */
+	private boolean extended;
+
+	/**
+	 * Optimistic locking: a move, an extension, a cancel and the expiry timer can hit the same row at once.
+	 * The slower one fails instead of overwriting the other (e.g. bringing an expired reservation back).
+	 */
+	@Version
+	private long version;
+
 	public Reservation(UUID id, String driverId, UUID spotId, String spotCode, UUID locationId, String locationName,
 			Instant createdAt, Instant expiresAt) {
 		this.id = id;
@@ -60,6 +72,41 @@ public class Reservation {
 
 	public boolean isOverdue(Instant now) {
 		return isActive() && !now.isBefore(expiresAt);
+	}
+
+	/**
+	 * Moves the hold to another spot; the hold time is not reset. parking-service has already
+	 * reserved the new spot for this reservation's id.
+	 */
+	public void moveTo(UUID newSpotId, String newSpotCode, UUID newLocationId, String newLocationName, Instant now) {
+		requireChangeable(now);
+		if (newSpotId.equals(spotId)) {
+			throw new IllegalStateException("Your reservation is already for " + spotCode + ".");
+		}
+		this.spotId = newSpotId;
+		this.spotCode = newSpotCode;
+		this.locationId = newLocationId;
+		this.locationName = newLocationName;
+	}
+
+	/** Holds the spot {@code by} longer. Allowed once per reservation. */
+	public void extend(Duration by, Instant now) {
+		requireChangeable(now);
+		if (extended) {
+			throw new IllegalStateException("You have already extended this reservation once.");
+		}
+		expiresAt = expiresAt.plus(by);
+		extended = true;
+	}
+
+	/** Only an active reservation whose hold time hasn't run out can be moved or extended. */
+	public void requireChangeable(Instant now) {
+		if (!isActive()) {
+			throw new IllegalStateException("This reservation has already ended (" + status.name().toLowerCase() + ").");
+		}
+		if (isOverdue(now)) {
+			throw new IllegalStateException("This reservation's hold time is over.");
+		}
 	}
 
 	public void cancel() {

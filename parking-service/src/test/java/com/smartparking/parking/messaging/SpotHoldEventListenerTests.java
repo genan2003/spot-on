@@ -81,6 +81,30 @@ class SpotHoldEventListenerTests {
 		awaitStatus(spot, SpotStatus.AVAILABLE);
 	}
 
+	@Test
+	void aMovedReservationFreesOnlyThePreviousSpot() {
+		UUID previous = newSpot();
+		UUID next = newSpot();
+		UUID reservation = UUID.randomUUID();
+		holdService.reserve(previous, "driver-1", reservation);
+		// reservation-service holds the new spot for the same reservation, then publishes the move.
+		holdService.reserve(next, "driver-1", reservation);
+
+		Map<String, Object> moved = new java.util.HashMap<>(Map.of("eventId", UUID.randomUUID(), "spotId", next,
+				"reservationId", reservation, "previousSpotId", previous, "driverId", "driver-1"));
+		rabbitTemplate.convertAndSend(MessagingConfig.EXCHANGE, "reservation.changed", moved);
+
+		awaitStatus(previous, SpotStatus.AVAILABLE);
+		assertThat(spotRepository.findById(next).orElseThrow().getStatus()).isEqualTo(SpotStatus.RESERVED);
+
+		// An extension names no previous spot and changes nothing.
+		UUID marker = UUID.randomUUID();
+		rabbitTemplate.convertAndSend(MessagingConfig.EXCHANGE, "reservation.changed",
+				Map.of("eventId", marker, "spotId", next, "reservationId", reservation, "driverId", "driver-1"));
+		await().atMost(Duration.ofSeconds(10)).until(() -> processedEventRepository.existsById(marker));
+		assertThat(spotRepository.findById(next).orElseThrow().getStatus()).isEqualTo(SpotStatus.RESERVED);
+	}
+
 	private UUID newSpot() {
 		UUID location = locationService.create("Event garage", "Test street", 46.77, 23.59).location().getId();
 		return spotService.addSpots(location, 0, "E", 1, SpotType.STANDARD, false, false).getFirst().getId();

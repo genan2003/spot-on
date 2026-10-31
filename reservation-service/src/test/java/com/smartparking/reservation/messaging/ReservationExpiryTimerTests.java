@@ -1,5 +1,6 @@
 package com.smartparking.reservation.messaging;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -54,6 +55,24 @@ class ReservationExpiryTimerTests {
 		await().atMost(Duration.ofSeconds(15)).until(() ->
 				reservationRepository.findById(reservation.getId()).orElseThrow().getStatus() == ReservationStatus.EXPIRED);
 		events.await("reservation.expired", reservation.getId().toString());
+	}
+
+	@Test
+	void anExtendedReservationExpiresAfterTheSecondHoldTime() {
+		PublishedEvents events = new PublishedEvents(rabbitTemplate);
+		UUID spot = UUID.randomUUID();
+		when(parkingClient.reserveSpot(eq(spot), eq("extend-driver"), any()))
+			.thenReturn(new HeldSpot(spot, "T2", UUID.randomUUID(), "Timer garage", "RESERVED", "extend-driver"));
+
+		long start = System.nanoTime();
+		Reservation reservation = reservationService.reserve("extend-driver", spot);
+		reservationService.extend(reservation.getId());
+		events.await("reservation.changed", reservation.getId().toString());
+
+		await().atMost(Duration.ofSeconds(20)).until(() ->
+				reservationRepository.findById(reservation.getId()).orElseThrow().getStatus() == ReservationStatus.EXPIRED);
+		// 2 s hold + 2 s extension: the first timer message (after 2 s) found it not yet due and started a second one.
+		assertThat(Duration.ofNanos(System.nanoTime() - start)).isGreaterThanOrEqualTo(Duration.ofMillis(3500));
 	}
 
 }

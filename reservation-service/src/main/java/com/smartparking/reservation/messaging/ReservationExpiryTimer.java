@@ -1,6 +1,8 @@
 package com.smartparking.reservation.messaging;
 
 import com.smartparking.reservation.event.ReservationCreatedEvent;
+import java.time.Instant;
+import java.util.UUID;
 import com.smartparking.reservation.reservation.service.ReservationService;
 import java.time.Clock;
 import java.time.Duration;
@@ -27,19 +29,37 @@ public class ReservationExpiryTimer {
 	/** Starts the timer: the message becomes visible on the expiry queue when the hold time is over. */
 	@TransactionalEventListener(fallbackExecution = true)
 	public void start(ReservationCreatedEvent event) {
-		long ttl = Math.max(0, Duration.between(clock.instant(), event.expiresAt()).toMillis());
-		rabbitTemplate.convertAndSend("", MessagingConfig.EXPIRY_DELAY_QUEUE, new ExpiryCheck(event.reservationId()), message -> {
+		schedule(event.reservationId(), event.expiresAt());
+	}
+
+	private void schedule(UUID reservationId, Instant expiresAt) {
+		long ttl = Math.max(0, Duration.between(clock.instant(), expiresAt).toMillis());
+		rabbitTemplate.convertAndSend("", MessagingConfig.EXPIRY_DELAY_QUEUE, new ExpiryCheck(reservationId), message -> {
 			message.getMessageProperties().setExpiration(String.valueOf(ttl));
 			return message;
 		});
 	}
 
-	/** Safe to receive twice or late: only a still-active, overdue reservation is expired. */
+	/**
+	 * Safe to receive twice or late: only a still-active, overdue reservation is expired.
+	 * An extended reservation isn't due yet when its first timer fires, so the timer starts again for the
+	 * remaining time. That is exactly one hold time, the same TTL as every other message on the delay
+	 * queue: RabbitMQ only dead-letters from the head of the queue, so a longer TTL would hold back
+	 * newer reservations' timers behind it.
+	 */
 	@RabbitListener(queues = MessagingConfig.EXPIRY_QUEUE)
 	public void onTimerElapsed(ExpiryCheck check) {
-		if (reservationService.expireIfDue(check.reservationId(), clock.instant())) {
+		Instant now = clock.instant();
+		if (reservationService.expireIfDue(check.reservationId(), now)) {
 			log.info("Reservation {} expired (TTL queue)", check.reservationId());
+			return;
 		}
+		reservationService.activeUntil(check.reservationId())
+			.filter(expiresAt -> expiresAt.isAfter(now))
+			.ifPresent(expiresAt -> {
+				log.info("Reservation {} was extended; checking again at {}", check.reservationId(), expiresAt);
+				schedule(check.reservationId(), expiresAt);
+			});
 	}
 
 }

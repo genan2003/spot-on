@@ -52,6 +52,22 @@ class DriverEventListenerTests {
 				"Payment of 16.00 lei failed. Try payment again from your receipt.");
 	}
 
+	@Test
+	void aMovedAndAnExtendedReservationAreTold() {
+		String driver = "driver-" + UUID.randomUUID();
+		publish("reservation.changed", Map.of("eventId", UUID.randomUUID(), "driverId", driver, "spotCode", "B2",
+				"previousSpotCode", "A1", "locationName", "Central Garage", "expiresAt", "2026-03-04T08:15:00Z"));
+		publish("reservation.changed", Map.of("eventId", UUID.randomUUID(), "driverId", driver, "spotCode", "B2",
+				"locationName", "Central Garage", "expiresAt", "2026-03-04T08:30:00Z"));
+
+		await().atMost(Duration.ofSeconds(10)).until(() -> notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver).size() >= 2);
+		assertThat(notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver))
+			.allMatch(n -> n.getKind() == NotificationKind.RESERVATION_CHANGED)
+			.extracting(Notification::getMessage)
+			.containsExactlyInAnyOrder("Your reservation moved from A1 to B2. It is held until 10:15.",
+					"B2 is now held for you until 10:30.");
+	}
+
 	private void publish(String routingKey, Map<String, Object> event) {
 		rabbitTemplate.convertAndSend(MessagingConfig.EXCHANGE, routingKey, event);
 	}

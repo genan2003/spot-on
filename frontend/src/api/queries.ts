@@ -77,6 +77,9 @@ function useParkingMutation<T, R>(fn: (input: T) => Promise<R>) {
 }
 
 export const useReserveSpot = () => useParkingMutation((spotId: string) => api.reserveSpot(spotId))
+export const useMoveReservation = () =>
+  useParkingMutation(({ id, spotId }: { id: string; spotId: string }) => api.moveReservation(id, spotId))
+export const useExtendReservation = () => useParkingMutation((id: string) => api.extendReservation(id))
 export const useCancelReservation = () => useParkingMutation((id: string) => api.cancelReservation(id))
 export const useStartSession = () =>
   useParkingMutation(({ spotId, reservationId }: { spotId: string; reservationId?: string }) => api.startSession(spotId, reservationId))

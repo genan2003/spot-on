@@ -69,7 +69,8 @@ interface BayRowProps {
 function BayRow({ spots, facing, ...rest }: BayRowProps) {
   return (
     <div className="flex">
-      <span className="mr-3 self-center text-lg font-extrabold text-paint/60" aria-hidden>
+      {/* Fixed gutter, wide enough for the longest zone name (two letters), so every row's bays line up. */}
+      <span className="mr-3 w-8 shrink-0 self-center text-lg font-extrabold text-paint/60" aria-hidden>
         {spots[0].zone}
       </span>
       <div className={`flex border-r-2 border-paint ${facing === 'down' ? 'border-t-2' : 'border-b-2'}`}>

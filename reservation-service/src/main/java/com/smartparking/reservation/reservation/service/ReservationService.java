@@ -3,6 +3,7 @@ package com.smartparking.reservation.reservation.service;
 import com.smartparking.reservation.client.HeldSpot;
 import com.smartparking.reservation.client.ParkingClient;
 import com.smartparking.reservation.event.ReservationCancelledEvent;
+import com.smartparking.reservation.event.ReservationChangedEvent;
 import com.smartparking.reservation.event.ReservationCreatedEvent;
 import com.smartparking.reservation.event.ReservationExpiredEvent;
 import com.smartparking.reservation.reservation.domain.Reservation;
@@ -15,9 +16,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -78,6 +81,50 @@ public class ReservationService {
 		return reservation;
 	}
 
+	/**
+	 * Moves a reservation to another free spot, keeping its hold time. Same order as {@link #reserve}:
+	 * <ol>
+	 *   <li>parking-service holds the new spot for this reservation's id (409 if it isn't free),</li>
+	 *   <li>the reservation row points to the new spot; the unique index refuses a spot someone else
+	 *       reserved meanwhile, and {@code @Version} a reservation that changed meanwhile (cancelled,
+	 *       expired). If this fails, the new spot is released again (compensation),</li>
+	 *   <li>{@code reservation.changed} is published; parking-service frees the previous spot.</li>
+	 * </ol>
+	 */
+	public Reservation move(UUID reservationId, UUID newSpotId) {
+		Reservation reservation = find(reservationId);
+		Instant now = clock.instant();
+		reservation.requireChangeable(now);
+		if (newSpotId.equals(reservation.getSpotId())) {
+			throw new IllegalStateException("Your reservation is already for " + reservation.getSpotCode() + ".");
+		}
+		UUID previousSpotId = reservation.getSpotId();
+		String previousSpotCode = reservation.getSpotCode();
+
+		HeldSpot spot = parkingClient.reserveSpot(newSpotId, reservation.getDriverId(), reservationId);
+		Reservation moved;
+		try {
+			reservation.moveTo(newSpotId, spot.spotCode(), spot.locationId(), spot.locationName(), now);
+			moved = reservationRepository.saveAndFlush(reservation);
+		}
+		catch (DataIntegrityViolationException | ConcurrencyFailureException | IllegalStateException ex) {
+			parkingClient.releaseSpotIfHeld(newSpotId, reservationId);
+			throw ex;
+		}
+		eventPublisher.publishEvent(ReservationChangedEvent.moved(moved, previousSpotId, previousSpotCode, now));
+		return moved;
+	}
+
+	/** Holds the spot one more hold time (once). The expiry timer picks up the new time when its first check fires. */
+	public Reservation extend(UUID reservationId) {
+		Reservation reservation = find(reservationId);
+		Instant now = clock.instant();
+		reservation.extend(reservationDuration, now);
+		Reservation extended = reservationRepository.saveAndFlush(reservation);
+		eventPublisher.publishEvent(ReservationChangedEvent.extended(extended, now));
+		return extended;
+	}
+
 	/** parking-service frees the spot when it receives {@code reservation.cancelled}. */
 	public void cancel(UUID reservationId) {
 		Reservation reservation = find(reservationId);
@@ -98,6 +145,11 @@ public class ReservationService {
 				return true;
 			})
 			.orElse(false);
+	}
+
+	/** When an active reservation's hold ends; empty if it has ended already. */
+	public Optional<Instant> activeUntil(UUID reservationId) {
+		return reservationRepository.findById(reservationId).filter(Reservation::isActive).map(Reservation::getExpiresAt);
 	}
 
 	/** Fallback sweep: expires every active reservation whose hold time has passed. */

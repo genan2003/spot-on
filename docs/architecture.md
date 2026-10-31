@@ -83,7 +83,7 @@ This is what Stage 2 builds (`docker-compose.yml`). Five deployables, each with 
 | Service | Owns | Synchronous API (via the gateway) | Publishes | Consumes |
 |---|---|---|---|---|
 | gateway | — | Routes `/api/v1/**`, `/ws` | — | — |
-| parking-service | `parking_db` | Locations, spots, pricing rules, availability; STOMP `/topic/spot-status` | `spot.status-changed` | `reservation.cancelled`, `reservation.expired`, `session.completed` |
+| parking-service | `parking_db` | Locations, spots, pricing rules, availability; STOMP `/topic/spot-status` | `spot.status-changed` | `reservation.cancelled`, `reservation.expired`, `reservation.changed`, `session.completed` |
 | reservation-service | `reservation_db` | Reservations, sessions | `reservation.*`, `session.started`, `session.completed` | `payment.*` |
 | payment-service | `payment_db` | Payments | `payment.completed`, `payment.failed` | `session.completed` |
 | notification-service | `notification_db` | Notifications | — | `reservation.*`, `session.completed`, `payment.*` |

@@ -5,5 +5,5 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record ReservationResponse(UUID id, UUID spotId, String spotCode, UUID locationId, String locationName,
-		ReservationStatus status, Instant createdAt, Instant expiresAt) {
+		ReservationStatus status, Instant createdAt, Instant expiresAt, boolean extended) {
 }

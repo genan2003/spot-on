@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.smartparking.reservation.TestcontainersConfiguration;
 import com.smartparking.reservation.client.HeldSpot;
 import com.smartparking.reservation.client.ParkingClient;
+import com.smartparking.reservation.reservation.domain.Reservation;
 import com.smartparking.reservation.reservation.domain.ReservationStatus;
 import com.smartparking.reservation.reservation.repository.ReservationRepository;
 import com.smartparking.reservation.reservation.service.ReservationService;
@@ -83,6 +84,47 @@ class ReservationConcurrencyTests {
 		assertThat(reservationRepository.findAll().stream()
 			.filter(r -> r.getSpotId().equals(spot) && r.getStatus() == ReservationStatus.ACTIVE)).hasSize(1);
 		verify(parkingClient, times(DRIVERS - 1)).releaseSpotIfHeld(eq(spot), any());
+	}
+
+	@Test
+	void onlyOneOfSeveralDriversCanMoveTheirReservationToTheSameSpot() throws Exception {
+		UUID target = UUID.randomUUID();
+		when(parkingClient.reserveSpot(any(), anyString(), any()))
+			.thenAnswer(call -> new HeldSpot(call.getArgument(0), "B1", UUID.randomUUID(), "Race garage", "RESERVED", call.getArgument(1)));
+		List<Reservation> reservations = new ArrayList<>();
+		for (int i = 0; i < 5; i++) {
+			reservations.add(reservationService.reserve("move-driver-" + i + "-" + target, UUID.randomUUID()));
+		}
+
+		CountDownLatch start = new CountDownLatch(1);
+		List<Future<Boolean>> results = new ArrayList<>();
+		try (ExecutorService pool = Executors.newFixedThreadPool(reservations.size())) {
+			for (Reservation reservation : reservations) {
+				results.add(pool.submit(() -> {
+					start.await();
+					try {
+						reservationService.move(reservation.getId(), target);
+						return true;
+					}
+					catch (DataIntegrityViolationException rejected) {
+						return false;
+					}
+				}));
+			}
+			start.countDown();
+		}
+
+		long winners = 0;
+		for (Future<Boolean> result : results) {
+			if (result.get()) {
+				winners++;
+			}
+		}
+		assertThat(winners).isEqualTo(1);
+		assertThat(reservationRepository.findAll().stream()
+			.filter(r -> r.getSpotId().equals(target) && r.getStatus() == ReservationStatus.ACTIVE)).hasSize(1);
+		// Each loser gives the target spot back, under its own reservation's id.
+		verify(parkingClient, times(reservations.size() - 1)).releaseSpotIfHeld(eq(target), any());
 	}
 
 }
