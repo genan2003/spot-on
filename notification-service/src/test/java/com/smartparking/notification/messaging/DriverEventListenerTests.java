@@ -7,11 +7,14 @@ import com.smartparking.notification.TestcontainersConfiguration;
 import com.smartparking.notification.notification.domain.Notification;
 import com.smartparking.notification.notification.domain.NotificationKind;
 import com.smartparking.notification.notification.repository.NotificationRepository;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -90,6 +93,25 @@ class DriverEventListenerTests {
 		await().atMost(Duration.ofSeconds(10)).until(() -> !notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver).isEmpty());
 		assertThat(notificationRepository.findTop50ByDriverIdOrderBySentAtDesc(driver)).extracting(Notification::getMessage)
 			.containsExactly("A3 at Central Garage was closed by the car park, so your reservation was cancelled. Pick another free spot.");
+	}
+
+	@Test
+	void aMessageThatKeepsFailingEndsUpInTheDeadLetterQueue() {
+		// Not JSON: the listener can't read it, however often it tries.
+		MessageProperties properties = new MessageProperties();
+		properties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+		properties.setMessageId("poison-" + UUID.randomUUID());
+		rabbitTemplate.send(MessagingConfig.EXCHANGE, "reservation.created",
+				new Message("this is not an event".getBytes(StandardCharsets.UTF_8), properties));
+
+		// Three attempts one second apart, then the recoverer moves it to the dead-letter queue.
+		Message dead = await().atMost(Duration.ofSeconds(15)).until(
+				() -> rabbitTemplate.receive(MessagingConfig.DEAD_LETTER_QUEUE, 500),
+				message -> message != null && properties.getMessageId().equals(message.getMessageProperties().getMessageId()));
+		assertThat(new String(dead.getBody(), StandardCharsets.UTF_8)).isEqualTo("this is not an event");
+		assertThat(dead.getMessageProperties().<String>getHeader("x-original-routingKey")).isEqualTo("reservation.created");
+		assertThat(dead.getMessageProperties().<String>getHeader("x-original-exchange")).isEqualTo(MessagingConfig.EXCHANGE);
+		assertThat(dead.getMessageProperties().<String>getHeader("x-exception-message")).isNotBlank();
 	}
 
 	private void publish(String routingKey, Map<String, Object> event) {

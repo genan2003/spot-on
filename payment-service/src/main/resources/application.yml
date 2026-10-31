@@ -20,7 +20,8 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
     listener:
       simple:
-        # A failing message is retried a few times, then dropped (logged) instead of looping forever.
+        # A failing message is retried a few times, then moved to this service's dead-letter queue
+        # (MessagingConfig.deadLetterRecoverer) instead of looping forever.
         default-requeue-rejected: false
         retry:
           enabled: true

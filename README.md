@@ -81,6 +81,15 @@ using the app:
 | `reservation.expiry-delay` | — | one message per reservation (two if it was extended); when its TTL runs out it moves to `reservation.expiry` |
 | `reservation.reminder-delay` | — | the same for the "expires soon" reminder: TTL = hold time − 5 min, then `reservation.reminders` → `reservation.expiring` |
 
+| `parking-service.dlq`, `reservation-service.dlq`, `payment-service.dlq`, `notification-service.dlq` | — (kept for people) | messages a service still couldn't handle after 3 attempts, via exchange `parking.dead-letters` |
+
+**Dead letters.** A listener that fails is retried 3 times, 1 second apart. Then the message goes to its
+service's `*.dlq` queue instead of being dropped, with headers `x-original-exchange`, `x-original-routingKey`
+and `x-exception-message`. To look at one: RabbitMQ UI → Queues → e.g. `notification-service.dlq` → Get
+messages. To replay it once the cause is fixed: Exchanges → `parking.events` → Publish message, with the
+routing key from `x-original-routingKey` and the same payload (content type `application/json`); then take it
+off the dead-letter queue (Get messages with "Automatic ack", or Purge).
+
 To see a queue hold messages, stop a consumer (`docker compose stop notification-service`), reserve and
 cancel a spot, and start it again: the waiting events are delivered and the notifications appear.
 Set `RESERVATION_DURATION=1m` on reservation-service to watch a reservation expire through the TTL queue; the

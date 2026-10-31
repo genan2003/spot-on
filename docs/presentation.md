@@ -109,6 +109,16 @@ docker compose start notification-service
 # Ready drops to 0; the bell shows the two new notifications
 ```
 
+Optional, dead-letter queue: a message no listener can handle is kept, not lost.
+
+```text
+RabbitMQ UI → Exchanges → parking.events → Publish message
+  Routing key: reservation.created   Payload: oops   Properties: content_type = application/json
+→ notification-service tries 3 times (1 s apart), then moves it to the dead-letter exchange
+RabbitMQ UI → Queues → notification-service.dlq → Get messages:
+  headers x-original-routingKey = reservation.created, x-exception-message = why it failed
+```
+
 Optional, failed payment (put it back afterwards):
 
 ```bash

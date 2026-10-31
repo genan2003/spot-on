@@ -26,14 +26,16 @@ import com.smartparking.reservation.pricing.PricingRule;
 import com.smartparking.reservation.reservation.repository.ReservationRepository;
 import com.smartparking.reservation.reservation.service.ReservationService;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
@@ -233,6 +235,20 @@ class ReservationFlowIntegrationTests {
 		// Reminded once per expiry time: the next sweep leaves it alone.
 		assertThat(reservationRepository.findById(UUID.fromString(reservationId)).orElseThrow()
 			.needsReminder(elevenMinutesLater, reservationService.reminderLead())).isFalse();
+	}
+
+	@Test
+	void aPaymentResultForAnUnknownSessionIsKeptInTheDeadLetterQueue() {
+		UUID unknownSession = UUID.randomUUID();
+		rabbitTemplate.convertAndSend(MessagingConfig.EXCHANGE, "payment.completed",
+				Map.of("eventId", UUID.randomUUID(), "paymentId", UUID.randomUUID(), "sessionId", unknownSession, "amount", 6.0));
+
+		// recordPayment fails three times ("Session … not found"), then the message is kept, not dropped.
+		Message dead = await().atMost(Duration.ofSeconds(15)).until(
+				() -> rabbitTemplate.receive(MessagingConfig.DEAD_LETTER_QUEUE, 500),
+				message -> message != null && new String(message.getBody(), StandardCharsets.UTF_8).contains(unknownSession.toString()));
+		assertThat(dead.getMessageProperties().<String>getHeader("x-original-routingKey")).isEqualTo("payment.completed");
+		assertThat(dead.getMessageProperties().<String>getHeader("x-exception-message")).contains("not found");
 	}
 
 	@Test
