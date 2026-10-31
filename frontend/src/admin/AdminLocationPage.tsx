@@ -10,6 +10,7 @@ import { SpotPlan } from '../components/SpotPlan'
 import { StatusLabel, StatusMark } from '../components/status'
 import { describePricing, levelName, levelsOf, spotTypeNames, statusNames } from '../lib/format'
 import { button, field } from '../lib/ui'
+import { DailyStatsTable } from './DailyStats'
 import { SpotPropertiesForm } from './SpotPropertiesForm'
 
 const statuses: SpotStatus[] = ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'OUT_OF_SERVICE']
@@ -95,6 +96,7 @@ export function AdminLocationPage() {
               {onLevel.length > 0 && (
                 <SpotTable spots={onLevel} selectedId={selectedId} onSelect={setSelectedId} checked={checked} onCheck={setChecked} />
               )}
+              <DailyStatsTable locationId={id} spots={all.length} />
             </>
           )
         }}

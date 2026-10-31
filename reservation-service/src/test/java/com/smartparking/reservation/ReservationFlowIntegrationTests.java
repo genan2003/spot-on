@@ -65,6 +65,20 @@ class ReservationFlowIntegrationTests {
 		verify(parkingClient, never()).occupySpot(any(), eq("driver-plate"), any(), any());
 	}
 
+
+	@Test
+	void dailyStatsListOneRowPerDayAndRefuseTooLongPeriods() throws Exception {
+		mvc.perform(get("/api/v1/parking-sessions/daily-stats").param("locationId", UUID.randomUUID().toString()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(7))
+			.andExpect(jsonPath("$[6].sessions").value(0))
+			.andExpect(jsonPath("$[6].revenue").value(0));
+		mvc.perform(get("/api/v1/parking-sessions/daily-stats").param("locationId", UUID.randomUUID().toString())
+				.param("days", "40"))
+			.andExpect(status().isBadRequest());
+		mvc.perform(get("/api/v1/parking-sessions/daily-stats")).andExpect(status().isBadRequest());
+	}
+
 	private static final UUID LOCATION = UUID.randomUUID();
 
 	@Autowired

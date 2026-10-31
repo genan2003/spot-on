@@ -12,6 +12,7 @@ import { DRIVER_ID } from './driver'
 import { ApiError } from './errors'
 import type {
   CurrentParking,
+  DailyStats,
   Notification,
   NotificationPreference,
   ParkingLocation,
@@ -331,6 +332,42 @@ setInterval(() => {
   }
 }, 1000)
 
+/**
+ * Like reservation-service's DailyStatsService: per day, sessions started, spot-hours used (a running session up
+ * to now), and the cost of the sessions that ended that day, paid or not. Days in the browser's time zone here.
+ */
+function dailyStats(locationId: string, days: number): DailyStats[] {
+  const now = Date.now()
+  const hour = 3_600_000
+  const round1 = (n: number) => Math.round(n * 10) / 10
+  const today = new Date(now)
+  today.setHours(0, 0, 0, 0)
+  const result: DailyStats[] = []
+  for (let back = days - 1; back >= 0; back--) {
+    const start = new Date(today)
+    start.setDate(start.getDate() - back)
+    const next = new Date(start)
+    next.setDate(next.getDate() + 1)
+    const from = start.getTime()
+    const to = Math.min(next.getTime(), now)
+    const day: DailyStats = { date: start.toLocaleDateString('en-CA'), hours: round1((to - from) / hour), sessions: 0, occupiedHours: 0, revenue: 0, unpaid: 0 }
+    let occupied = 0
+    for (const s of sessions.filter((x) => x.locationId === locationId)) {
+      const started = new Date(s.startedAt).getTime()
+      const ended = s.endedAt ? new Date(s.endedAt).getTime() : undefined
+      if (started >= from && started < to) day.sessions++
+      occupied += Math.max(0, Math.min(ended ?? now, to) - Math.max(started, from))
+      if (ended !== undefined && ended >= from && ended < to) {
+        if (s.paymentStatus === 'COMPLETED') day.revenue = money(day.revenue + s.cost)
+        else day.unpaid = money(day.unpaid + s.cost)
+      }
+    }
+    day.occupiedHours = round1(occupied / hour)
+    result.push(day)
+  }
+  return result
+}
+
 // Other drivers arriving and leaving.
 setInterval(() => {
   const candidates = spots.filter((s) => s.heldBy !== DRIVER_ID && (s.status === 'AVAILABLE' || s.status === 'OCCUPIED'))
@@ -364,6 +401,7 @@ seedHistory()
 export const mockApi: Api = {
   listLocations: () => delay(() => locations.map(counted)),
   getLocation: (id) => delay(() => counted(findLocation(id))),
+  getDailyStats: (locationId) => delay(() => dailyStats(locationId, 7)),
   listSpots: (locationId) => delay(() => spots.filter((s) => s.locationId === locationId)),
 
   createLocation: (input) =>

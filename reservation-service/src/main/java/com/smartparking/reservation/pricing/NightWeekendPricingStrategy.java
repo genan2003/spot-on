@@ -1,5 +1,6 @@
 package com.smartparking.reservation.pricing;
 
+import com.smartparking.reservation.common.TimeConfig;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -17,7 +18,7 @@ import java.util.stream.Stream;
 public record NightWeekendPricingStrategy(BigDecimal dayRate, BigDecimal nightWeekendRate, LocalTime nightStart, LocalTime nightEnd)
 		implements PricingStrategy {
 
-	static final ZoneId CAR_PARK_ZONE = ZoneId.of("Europe/Bucharest");
+	static final ZoneId CAR_PARK_ZONE = TimeConfig.CAR_PARK_ZONE;
 
 	public static final LocalTime DEFAULT_NIGHT_START = LocalTime.of(20, 0);
 

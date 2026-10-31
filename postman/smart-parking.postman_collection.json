@@ -1451,6 +1451,48 @@
           }
         },
         {
+          "name": "Car park's last 7 days (revenue and occupancy)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const days = pm.response.json();",
+                  "pm.test('One row per day, today last', () => pm.expect(days).to.have.lengthOf(7));",
+                  "const today = days[6];",
+                  "pm.test('Counts today\\'s session', () => pm.expect(today.sessions).to.be.at.least(1));",
+                  "pm.test('Today is counted up to now', () => pm.expect(today.hours).to.be.above(0).and.at.most(25));",
+                  "pm.test('Amounts are never negative', () => days.forEach(d => { pm.expect(d.revenue).to.be.at.least(0); pm.expect(d.unpaid).to.be.at.least(0); }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-sessions/daily-stats?locationId={{locationId}}"
+          }
+        },
+        {
+          "name": "Statistics for more than 31 days are refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/parking-sessions/daily-stats?locationId={{locationId}}&days=40"
+          }
+        },
+        {
           "name": "Payment account (new driver: card, 25 lei)",
           "event": [
             {

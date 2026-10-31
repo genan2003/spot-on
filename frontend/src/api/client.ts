@@ -2,6 +2,7 @@ import { DRIVER_ID } from './driver'
 import { ApiError } from './errors'
 import type {
   CurrentParking,
+  DailyStats,
   NewLocation,
   NewSpots,
   Notification,
@@ -62,6 +63,8 @@ const json = (method: string, body?: unknown): RequestInit => ({
 export interface Api {
   listLocations(): Promise<ParkingLocation[]>
   getLocation(id: string): Promise<ParkingLocation>
+  /** The car park's last 7 days, oldest first; the last one is today. */
+  getDailyStats(locationId: string): Promise<DailyStats[]>
   listSpots(locationId: string): Promise<Spot[]>
   createLocation(location: NewLocation): Promise<ParkingLocation>
   updateLocation(id: string, location: NewLocation): Promise<ParkingLocation>
@@ -106,6 +109,7 @@ export interface Api {
 const httpApi: Api = {
   listLocations: () => request('/parking-locations'),
   getLocation: (id) => request(`/parking-locations/${id}`),
+  getDailyStats: (locationId) => request(`/parking-sessions/daily-stats?locationId=${locationId}`),
   listSpots: (locationId) => request(`/parking-locations/${locationId}/spots`),
   createLocation: (location) => request('/parking-locations', json('POST', location)),
   updateLocation: (id, location) => request(`/parking-locations/${id}`, json('PUT', location)),

@@ -135,6 +135,24 @@ export interface Payment {
   processedAt?: string
 }
 
+/**
+ * One day at one car park (reservation-service, car park’s local time). `hours` is the length of the day so far:
+ * 24, or the hours since midnight for today.
+ */
+export interface DailyStats {
+  /** YYYY-MM-DD */
+  date: string
+  hours: number
+  /** Sessions that started that day. */
+  sessions: number
+  /** Spot-hours used that day. */
+  occupiedHours: number
+  /** Paid cost of the sessions that ended that day. */
+  revenue: number
+  /** Cost of the sessions that ended that day and aren't paid yet. */
+  unpaid: number
+}
+
 export interface History {
   reservations: Reservation[]
   sessions: ParkingSession[]

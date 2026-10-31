@@ -42,6 +42,10 @@ export const useLocations = () => useQuery({ queryKey: keys.locations, queryFn: 
 
 export const useLocation = (id: string) => useQuery({ queryKey: keys.location(id), queryFn: () => api.getLocation(id) })
 
+/** Revenue and occupancy per day; reloaded every minute, as today's figures keep growing. */
+export const useDailyStats = (locationId: string) =>
+  useQuery({ queryKey: ['daily-stats', locationId], queryFn: () => api.getDailyStats(locationId), refetchInterval: 60_000 })
+
 export const useSpots = (locationId: string) =>
   useQuery({ queryKey: keys.spots(locationId), queryFn: () => api.listSpots(locationId) })
 
