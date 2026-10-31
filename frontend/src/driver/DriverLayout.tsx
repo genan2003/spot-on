@@ -1,11 +1,12 @@
 import { Link, Outlet, useLocation as useRoute } from 'react-router'
-import { useCurrentParking, useLiveSpotStatus, useNotifications, useNow } from '../api/queries'
+import { useCurrentParking, useLiveNotifications, useLiveSpotStatus, useNotifications, useNow } from '../api/queries'
 import { BellIcon, ParkingSign } from '../components/icons'
 import { clock } from '../lib/format'
 import { useSeenCount } from '../lib/seen'
 
 export function DriverLayout() {
   useLiveSpotStatus()
+  const latest = useLiveNotifications()
   const route = useRoute()
   const notifications = useNotifications()
   const seen = useSeenCount()
@@ -34,6 +35,10 @@ export function DriverLayout() {
           </Link>
         </nav>
       </header>
+      {/* New notifications arrive live; screen readers hear them, sighted drivers see the bell count change. */}
+      <p className="sr-only" aria-live="polite">
+        {latest?.message}
+      </p>
       <main className="flex-1 pb-24">
         <Outlet />
       </main>

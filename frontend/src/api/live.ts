@@ -1,6 +1,7 @@
 import { Client } from '@stomp/stompjs'
 import { USE_MOCKS } from './client'
-import type { SpotStatusChanged } from './types'
+import { DRIVER_ID } from './driver'
+import type { Notification, SpotStatusChanged } from './types'
 
 /**
  * Subscribes to spot.status-changed events. parking-service relays them from RabbitMQ
@@ -29,4 +30,32 @@ export function subscribeToSpotStatus(onChange: (event: SpotStatusChanged) => vo
   })
   client.activate()
   return () => void client.deactivate()
+}
+
+/**
+ * Live notifications for the demo driver: Server-Sent Events from notification-service
+ * (/api/v1/notifications/stream). EventSource reconnects by itself after a drop.
+ */
+export function subscribeToNotifications(onNotification: (notification: Notification) => void, onReconnect: () => void): () => void {
+  if (USE_MOCKS) {
+    let unsubscribe = () => {}
+    let cancelled = false
+    import('./mock').then(({ onMockNotification }) => {
+      if (!cancelled) unsubscribe = onMockNotification(onNotification)
+    })
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }
+
+  const source = new EventSource(`/api/v1/notifications/stream?driverId=${encodeURIComponent(DRIVER_ID)}`)
+  source.addEventListener('notification', (event) => onNotification(JSON.parse((event as MessageEvent).data)))
+  // After a drop, anything sent meanwhile never reached this stream: load the list again.
+  let opened = false
+  source.addEventListener('open', () => {
+    if (opened) onReconnect()
+    opened = true
+  })
+  return () => source.close()
 }

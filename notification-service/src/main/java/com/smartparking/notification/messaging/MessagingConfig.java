@@ -2,6 +2,7 @@ package com.smartparking.notification.messaging;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.amqp.core.AnonymousQueue;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Declarable;
@@ -27,6 +28,9 @@ public class MessagingConfig {
 	 * Messages a listener still couldn't handle after its retries go here instead of being dropped, with the
 	 * original routing key and the exception in their headers. Shared topic exchange; one queue per service.
 	 */
+	/** Published by every instance after saving a notification; see {@code NotificationLiveRelay}. */
+	public static final String NOTIFICATION_SENT = "notification.sent";
+
 	public static final String DEAD_LETTER_EXCHANGE = "parking.dead-letters";
 
 	public static final String DEAD_LETTER_QUEUE = "notification-service.dlq";
@@ -62,6 +66,20 @@ public class MessagingConfig {
 			declarables.add(binding);
 		}
 		return new Declarables(declarables);
+	}
+
+	/**
+	 * One temporary queue per instance for notification.sent: every instance gets every notification and
+	 * forwards it to the streams connected to it.
+	 */
+	@Bean
+	AnonymousQueue notificationLiveQueue() {
+		return new AnonymousQueue();
+	}
+
+	@Bean
+	Binding notificationLiveBinding(AnonymousQueue notificationLiveQueue, TopicExchange parkingEventsExchange) {
+		return BindingBuilder.bind(notificationLiveQueue).to(parkingEventsExchange).with(NOTIFICATION_SENT);
 	}
 
 	/**

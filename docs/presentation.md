@@ -180,7 +180,7 @@ live takes about 30 seconds because Testcontainers starts PostgreSQL and RabbitM
 |---|---|---|
 | 7: at least two independent services with clear responsibilities | parking, reservation, payment, notification services + gateway; one database each | Done |
 | 7: inter-service communication | REST (`ParkingClient`, hold and pricing) and RabbitMQ events | Done |
-| 7: Postman collection covering all features | `postman/` (locations, spots, pricing, availability, reservations, sessions and cost, payments and retry, notifications) | Done; live spot updates and expiry are shown in the UI, since Newman can't wait 15 minutes or open a WebSocket |
+| 7: Postman collection covering all features | `postman/` (locations, spots, pricing, availability, reservations, sessions and cost, payments and retry, notifications) | Done; live spot updates, live notifications and expiry are shown in the UI, since Newman can't wait 15 minutes or keep a WebSocket or event stream open |
 | 7: Docker packaging, README with run instructions | Multi-stage Dockerfiles, `docker-compose.yml`, README "Quick start" (checked on a fresh copy) | Done |
 | 8: message queue between at least two services | RabbitMQ: 8 routing keys, 4 durable consumer queues, TTL + dead-letter expiry | Done |
 | 9: CI/CD that builds, tests and deploys to local Docker | `.github/workflows/ci-cd.yml` | Done in code; needs the self-hosted runner registered and one green run on `main` |

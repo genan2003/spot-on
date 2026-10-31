@@ -138,8 +138,18 @@ function broadcast(spot: Spot) {
   listeners.forEach((listener) => listener({ spotId, locationId, status, heldBy, type, evCharging, accessible }))
 }
 
+const notificationListeners = new Set<(notification: Notification) => void>()
+
+/** Like notification-service: saves it, then pushes it to the open app (Server-Sent Events). */
 function notify(kind: Notification['kind'], message: string) {
-  notifications.unshift({ id: crypto.randomUUID(), kind, message, sentAt: new Date().toISOString() })
+  const notification: Notification = { id: crypto.randomUUID(), kind, message, sentAt: new Date().toISOString() }
+  notifications.unshift(notification)
+  notificationListeners.forEach((listener) => listener(structuredClone(notification)))
+}
+
+export function onMockNotification(listener: (notification: Notification) => void): () => void {
+  notificationListeners.add(listener)
+  return () => notificationListeners.delete(listener)
 }
 
 function processPayment(session: ParkingSession) {

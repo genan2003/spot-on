@@ -86,7 +86,7 @@ This is what Stage 2 builds (`docker-compose.yml`). Five deployables, each with 
 | parking-service | `parking_db` | Locations, spots, pricing rules, availability; STOMP `/topic/spot-status` | `spot.status-changed`, `spot.closed` | `reservation.cancelled`, `reservation.expired`, `reservation.changed`, `session.completed` |
 | reservation-service | `reservation_db` | Reservations, sessions | `reservation.*` (incl. `reservation.expiring` reminders), `session.started`, `session.completed` | `payment.*`, `spot.closed` |
 | payment-service | `payment_db` | Payments | `payment.completed`, `payment.failed` | `session.completed` |
-| notification-service | `notification_db` | Notifications | — | `reservation.*`, `session.completed`, `payment.*` |
+| notification-service | `notification_db` | Notifications, live stream (Server-Sent Events) | `notification.sent` | `reservation.*`, `session.completed`, `payment.*`, `notification.sent` |
 
 Services talk in two ways:
 

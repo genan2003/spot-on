@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from './client'
-import { subscribeToSpotStatus } from './live'
-import type { CurrentParking, NewLocation, NewSpots, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
+import { subscribeToNotifications, subscribeToSpotStatus } from './live'
+import type { CurrentParking, NewLocation, NewSpots, Notification, PricingRule, Spot, SpotPropertyChanges, SpotStatus } from './types'
 
 export const keys = {
   locations: ['locations'] as const,
@@ -31,8 +31,31 @@ export const useCurrentParking = () =>
     },
   })
 
-export const useNotifications = () =>
-  useQuery({ queryKey: keys.notifications, queryFn: api.listNotifications, refetchInterval: 5000 })
+/** Loaded once; new ones arrive live (useLiveNotifications), so no polling. */
+export const useNotifications = () => useQuery({ queryKey: keys.notifications, queryFn: api.listNotifications })
+
+/**
+ * Adds each live notification to the cached list (newest first) as it arrives, and returns the latest one,
+ * so the layout can announce it to screen readers.
+ */
+export function useLiveNotifications(): Notification | undefined {
+  const queryClient = useQueryClient()
+  const [latest, setLatest] = useState<Notification>()
+  useEffect(
+    () =>
+      subscribeToNotifications(
+        (notification) => {
+          queryClient.setQueryData<Notification[]>(keys.notifications, (list) =>
+            list?.some((n) => n.id === notification.id) ? list : [notification, ...(list ?? [])],
+          )
+          setLatest(notification)
+        },
+        () => queryClient.invalidateQueries({ queryKey: keys.notifications }),
+      ),
+    [queryClient],
+  )
+  return latest
+}
 
 /** Keeps every cached spot list in step with spot.status-changed events. */
 export function useLiveSpotStatus() {
