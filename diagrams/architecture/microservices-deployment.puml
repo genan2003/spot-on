@@ -2,7 +2,7 @@
 title Microservices architecture: Docker deployment
 
 ' Exercise 6. Mirrors docker-compose.yml: one container per service, one PostgreSQL container
-' with a database per service, RabbitMQ. Deployed by the CI/CD pipeline's self-hosted runner.
+' with a database per service, RabbitMQ, Zipkin for traces. Deployed by the CI/CD pipeline's self-hosted runner.
 
 skinparam shadowing false
 left to right direction
@@ -38,6 +38,9 @@ node "Docker host (Docker Compose network: smart-parking)" as Host {
   node "rabbitmq :5672, UI :15672\nrabbitmq:4-management" as MQNode {
     queue "parking.events" as MQ
   }
+  node "zipkin :9411\nopenzipkin/zipkin:3" as ZK {
+    artifact "Traces (in memory)" as Traces
+  }
 }
 
 node "GitHub Actions\nself-hosted runner" as Runner
@@ -61,6 +64,13 @@ RS --> MQ : AMQP
 PayS --> MQ : AMQP
 NS --> MQ : AMQP
 
-Runner ..> Host : docker compose up -d --build --wait\nthen Newman smoke test
+' Every Java service sends its spans; dotted because tracing is optional (requests work without it).
+GW ..> Traces : spans (HTTP)
+PS ..> Traces
+RS ..> Traces
+PayS ..> Traces
+NS ..> Traces
+
+Runner ..> Host : docker compose up -d ~--build ~--wait\nthen Newman smoke test
 
 @enduml

@@ -4,6 +4,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
+import io.micrometer.observation.ObservationRegistry;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,8 @@ import org.springframework.web.client.RestClient;
  *       lets a few calls through to test whether parking-service is back.</li>
  * </ul>
  * Only the core Resilience4j modules are used, set up here in code: no annotations or AOP to explain.
+ * <p>The {@link ObservationRegistry} makes every call a span and adds the trace id to the request headers
+ * ({@code traceparent}), so Zipkin shows parking-service's work inside the reservation's trace.
  */
 @Slf4j
 @Configuration
@@ -33,11 +36,16 @@ public class ParkingClientConfig {
 	@Bean
 	RestClient parkingRestClient(@Value("${smartparking.parking-service.url}") String baseUrl,
 			@Value("${smartparking.parking-service.connect-timeout}") Duration connectTimeout,
-			@Value("${smartparking.parking-service.read-timeout}") Duration readTimeout) {
+			@Value("${smartparking.parking-service.read-timeout}") Duration readTimeout,
+			ObservationRegistry observationRegistry) {
 		JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
 				HttpClient.newBuilder().connectTimeout(connectTimeout).build());
 		requestFactory.setReadTimeout(readTimeout);
-		return RestClient.builder().baseUrl(baseUrl).requestFactory(requestFactory).build();
+		return RestClient.builder()
+			.baseUrl(baseUrl)
+			.requestFactory(requestFactory)
+			.observationRegistry(observationRegistry)
+			.build();
 	}
 
 	@Bean

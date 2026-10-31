@@ -10,6 +10,7 @@ x-service-env: &service-env
   RABBITMQ_PORT: 5672
   RABBITMQ_USER: guest
   RABBITMQ_PASSWORD: guest
+  ZIPKIN_URL: http://zipkin:9411
 
 # Healthy once Spring Boot answers /actuator/health with UP. `docker compose up --wait` waits for this,
 # so scripts (README, CI smoke test) can call the API as soon as the command returns.
@@ -52,6 +53,13 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
+
+  # Distributed tracing UI (http://localhost:9411). Spans are kept in memory, so they are gone after a restart.
+  # No service waits for it: if Zipkin is down, requests still work and only their spans are lost.
+  zipkin:
+    image: openzipkin/zipkin:3
+    ports:
+      - "9411:9411"
 
   parking-service:
     build: ./parking-service
@@ -116,6 +124,7 @@ services:
       RESERVATION_SERVICE_URL: http://reservation-service:8082
       PAYMENT_SERVICE_URL: http://payment-service:8083
       NOTIFICATION_SERVICE_URL: http://notification-service:8084
+      ZIPKIN_URL: http://zipkin:9411
     ports:
       - "8080:8080"
     depends_on:

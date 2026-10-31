@@ -18,8 +18,12 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    # Trace context travels in the message headers, so a trace continues from publisher to consumer.
+    template:
+      observation-enabled: true
     listener:
       simple:
+        observation-enabled: true
         # A failing message is retried a few times, then moved to this service's dead-letter queue
         # (MessagingConfig.deadLetterRecoverer) instead of looping forever.
         default-requeue-rejected: false
@@ -29,6 +33,13 @@ spring:
           initial-interval: 1s
 
 management:
+  tracing:
+    sampling:
+      # Every request is traced, so any demo request can be found in Zipkin (production would sample less).
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: ${ZIPKIN_URL:http://localhost:9411}/api/v2/spans
   endpoints:
     web:
       exposure:

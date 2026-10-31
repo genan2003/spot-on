@@ -99,6 +99,9 @@ Services talk in two ways:
   can happen afterwards: notifications, payments, spot status updates. Each consumer has its own
   durable queue and ignores events it has already processed (dedupe on `eventId`).
 
+Every service sends tracing spans to Zipkin (Micrometer Tracing). The trace id travels with each
+HTTP request and RabbitMQ message, so one driver action is one trace across all the services it touched.
+
 ![Microservices architecture: components](images/architecture/microservices-component.png)
 
 ![Microservices architecture: deployment](images/architecture/microservices-deployment.png)
@@ -157,8 +160,8 @@ the session ends immediately and the payment follows a moment later.
 - **Distributed failures.** Network calls can time out; reserving a spot spans two databases and
   needs a compensating action.
 - **More moving parts.** Gateway, broker, five databases, health checks, configuration per service.
-- **Harder debugging.** One user action leaves logs in several services; tracing needs
-  correlation IDs.
+- **Harder debugging.** One user action leaves logs in several services; it needs distributed
+  tracing (here Zipkin, plus trace ids in every log line) to follow it.
 - **Duplicated plumbing.** Every service repeats error handling, Flyway, Docker and CI setup.
 - **Synchronous coupling remains:** if parking-service is down, nobody can reserve.
 

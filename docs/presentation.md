@@ -119,6 +119,16 @@ RabbitMQ UI → Queues → notification-service.dlq → Get messages:
   headers x-original-routingKey = reservation.created, x-exception-message = why it failed
 ```
 
+Optional, one request across all services (Zipkin):
+
+```text
+Driver app: park on a spot, then "End session"
+http://localhost:9411 → Run query → the newest "post /api/v1/parking-sessions/{id}/end" trace
+→ gateway → reservation-service → parking-service (pricing rule over REST), then session.completed
+  through RabbitMQ to parking-, payment- and notification-service, then payment.completed back
+docker compose logs | grep <traceId>   # the same request in every service's log
+```
+
 Optional, circuit breaker (parking-service down):
 
 ```bash
@@ -172,6 +182,7 @@ live takes about 30 seconds because Testcontainers starts PostgreSQL and RabbitM
 | Why REST for reserving but events for everything else? | The driver needs a yes or no now, so holding the spot is synchronous. Freeing the spot, payment and notifications can happen a moment later and must survive a service being down, so they are events. | B |
 | How can two drivers never get the same spot across two databases? | parking-service: the spot's state rejects a held spot, and `@Version` fails the slower of two simultaneous requests. reservation-service: a partial unique index on open reservations per spot. If saving the reservation fails after the spot was held, a compensating call releases it. | B |
 | What if parking-service is down when someone reserves? | `RestClient` has timeouts, and Resilience4j retries a failed call up to 3 times. If most recent calls failed, the circuit breaker opens: for 30 s requests fail at once with a 503 "try again in 30 seconds" (and `Retry-After`) instead of each waiting for a timeout. Then two test calls decide whether it closes again. Nothing is saved. | A |
+| How do you debug one request across five services? | Distributed tracing: Micrometer Tracing gives each request a trace id, which travels in the `traceparent` header of HTTP calls and RabbitMQ messages. Every service sends its spans to Zipkin, which draws the whole tree with timings; every log line carries the trace id too. Health checks and timers are filtered out. | A |
 | Isn't retrying a reserve dangerous? What if the first one worked? | Every call names its hold id (the reservation's id, made before the call). parking-service treats reserving or occupying a spot again with the hold it already has as done, so the retry gets the same answer instead of a 409. A 409 or 404 is an answer and is never retried. | A |
 | What if notification-service is down? | Nothing breaks. Its durable queue keeps the events and it catches up when it starts (shown in the demo). | B |
 | What if RabbitMQ delivers an event twice? | Each consumer stores the `eventId` in `processed_event` in the same transaction as the effect; a duplicate is skipped. payment-service also charges each session only once (unique index). | C |

@@ -38,6 +38,7 @@ A new database has no car parks yet: create one in the admin dashboard (add a lo
 | payment-service | http://localhost:8083 |
 | notification-service | http://localhost:8084 |
 | RabbitMQ management UI | http://localhost:15672 (guest / guest) |
+| Zipkin (traces) | http://localhost:9411 |
 | PostgreSQL | localhost:5432 (smartparking / smartparking) |
 
 Each service exposes Swagger UI at `/swagger-ui.html` and its health at `/actuator/health` on its own port.
@@ -45,7 +46,7 @@ Each service exposes Swagger UI at `/swagger-ui.html` and its health at `/actuat
 follows one service's log (simulated payments are logged by payment-service, notifications by notification-service).
 
 Troubleshooting:
-- **A port is already in use:** stop whatever uses ports 3000, 5432, 5672, 8080–8084 or 15672
+- **A port is already in use:** stop whatever uses ports 3000, 5432, 5672, 8080–8084, 9411 or 15672
   (often a local PostgreSQL), or change the left side of the port mapping in `docker-compose.yml`.
 - **`--wait` fails or a service keeps restarting:** check `docker compose logs <service>`. If the database
   was created by an older version of the project, start clean with `docker compose down -v`.
@@ -99,10 +100,20 @@ reminder then arrives after 30 seconds. Purge `reservation.expiry-delay` and `re
 (`docker compose exec rabbitmq rabbitmqctl purge_queue <name>`): a delay queue releases messages only from its
 head, so new 1-minute timers would wait behind 15-minute ones from earlier runs (the minute sweep catches them late).
 
+## Tracing (Zipkin)
+
+Every request is traced from the gateway through each service it reaches, over REST and over RabbitMQ
+(Micrometer Tracing with Brave; the trace id travels in the `traceparent` header of HTTP requests and messages).
+Do something in the app, open http://localhost:9411 and press "Run query": "End session", for example, shows
+one trace across all five services (gateway → reservation-service → parking-service, then `session.completed` to
+payment-, parking- and notification-service, then `payment.completed` back). Every log line carries
+`[traceId-spanId]`, so `docker compose logs | grep <traceId>` shows the same request in the logs.
+Health checks and timer runs are not traced. Spans live in Zipkin's memory, so a restart clears them.
+
 ## Develop one service
 
 ```bash
-docker compose up -d postgres rabbitmq   # infrastructure only
+docker compose up -d postgres rabbitmq zipkin   # infrastructure only (Zipkin is optional)
 cd parking-service
 ./mvnw spring-boot:run                   # run against local infrastructure
 ./mvnw clean verify                      # build and test (Testcontainers needs Docker)
