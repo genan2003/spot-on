@@ -4,6 +4,7 @@ import com.smartparking.parking.location.domain.LocationSummary;
 import com.smartparking.parking.location.domain.ParkingLocation;
 import com.smartparking.parking.location.domain.PricingRule;
 import com.smartparking.parking.location.repository.ParkingLocationRepository;
+import com.smartparking.parking.spot.domain.ParkingSpot;
 import com.smartparking.parking.spot.domain.SpotStatus;
 import com.smartparking.parking.spot.repository.ParkingSpotRepository;
 import com.smartparking.parking.spot.repository.SpotCount;
@@ -57,8 +58,12 @@ public class ParkingLocationService {
 	@Transactional
 	public void delete(UUID id) {
 		ParkingLocation location = find(id);
-		if (spotRepository.existsByLocationIdAndStatusIn(id, List.of(SpotStatus.RESERVED, SpotStatus.OCCUPIED))) {
-			throw new IllegalStateException(location.getName() + " still has reserved or occupied spots. Wait until they are free.");
+		// Name the spots in use, so the admin knows what to wait for (or which reserved spots to close first).
+		List<String> inUse = spotRepository.findByLocationIdAndStatusIn(id, List.of(SpotStatus.RESERVED, SpotStatus.OCCUPIED))
+			.stream().sorted(ParkingSpot.ORDER).map(ParkingSpot::getCode).toList();
+		if (!inUse.isEmpty()) {
+			throw new IllegalStateException(location.getName() + " can't be deleted while drivers use " + String.join(", ", inUse)
+					+ ". Wait until those spots are free; reserved ones you can close first.");
 		}
 		spotRepository.deleteByLocationId(id);
 		locationRepository.delete(location);

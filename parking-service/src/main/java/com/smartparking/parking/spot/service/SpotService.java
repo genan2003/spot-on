@@ -11,7 +11,6 @@ import com.smartparking.parking.spot.repository.ParkingSpotRepository;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -26,10 +25,6 @@ import org.springframework.web.server.ResponseStatusException;
 @RequiredArgsConstructor
 public class SpotService {
 
-	/** Level, zone, then number (A2 before A10), the order spot lists use everywhere. */
-	private static final Comparator<ParkingSpot> SPOT_ORDER = Comparator.comparingInt(ParkingSpot::getLevel)
-		.thenComparing(ParkingSpot::getZone)
-		.thenComparingInt(spot -> Integer.parseInt(spot.getCode().substring(spot.getZone().length())));
 
 	private final ParkingSpotRepository spotRepository;
 	private final ParkingLocationService locationService;
@@ -46,10 +41,15 @@ public class SpotService {
 	public List<ParkingSpot> addSpots(UUID locationId, int level, String zone, int count, SpotType type,
 			boolean evCharging, boolean accessible) {
 		ParkingLocation location = locationService.find(locationId);
-		long existing = spotRepository.countByLocationIdAndLevelAndZone(locationId, level, zone);
+		// Continue after the highest number in the zone, not the count: after deleting A2 of A1–A3,
+		// the next spot is A4, not a second A3.
+		int highest = spotRepository.findByLocationIdAndLevelAndZone(locationId, level, zone).stream()
+			.mapToInt(ParkingSpot::getNumber)
+			.max()
+			.orElse(0);
 		List<ParkingSpot> added = new ArrayList<>();
 		for (int i = 1; i <= count; i++) {
-			added.add(new ParkingSpot(location, zone + (existing + i), level, zone, type, evCharging, accessible));
+			added.add(new ParkingSpot(location, zone + (highest + i), level, zone, type, evCharging, accessible));
 		}
 		return spotRepository.saveAll(added);
 	}
@@ -70,7 +70,23 @@ public class SpotService {
 			spot.changeProperties(type, evCharging, accessible);
 			eventPublisher.publishEvent(SpotStatusChanged.of(spot));
 		});
-		return spots.stream().sorted(SPOT_ORDER).toList();
+		return spots.stream().sorted(ParkingSpot.ORDER).toList();
+	}
+
+	/**
+	 * Removes a spot for good. Only a free or closed spot: a reserved or occupied one belongs to a driver
+	 * right now (an admin can close a reserved spot first, which cancels the reservation).
+	 * {@code @Version} turns a delete racing a reservation into a 409.
+	 */
+	@Transactional
+	public void delete(UUID locationId, UUID spotId) {
+		ParkingSpot spot = spotRepository.findByIdAndLocationId(spotId, locationId)
+			.orElseThrow(() -> new EntityNotFoundException("Spot " + spotId + " not found at this location."));
+		if (spot.getStatus() == SpotStatus.RESERVED || spot.getStatus() == SpotStatus.OCCUPIED) {
+			throw new IllegalStateException("Spot " + spot.getCode() + " is " + spot.getStatus().name().toLowerCase()
+					+ ". Wait until it is free, or close it first if it is only reserved.");
+		}
+		spotRepository.delete(spot);
 	}
 
 	/** One admin edit of one spot: properties first, then the status, in one transaction. */

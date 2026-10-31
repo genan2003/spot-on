@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router'
 import { AdminHome, AdminLayout } from './admin/AdminLayout'
 import { AdminLocationPage } from './admin/AdminLocationPage'
 import { NewLocationPage } from './admin/NewLocationPage'
+import { EditLocationPage } from './admin/EditLocationPage'
 import { PricingPage } from './admin/PricingPage'
 import { NotFound } from './components/NotFound'
 import { DriverLayout } from './driver/DriverLayout'
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
       { path: 'locations/new', element: <NewLocationPage /> },
       { path: 'locations/:id', element: <AdminLocationPage /> },
       { path: 'locations/:id/pricing', element: <PricingPage /> },
+      { path: 'locations/:id/edit', element: <EditLocationPage /> },
     ],
   },
   { path: '*', element: <NotFound /> },

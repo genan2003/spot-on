@@ -185,6 +185,7 @@ setInterval(() => {
 setInterval(() => {
   const candidates = spots.filter((s) => s.heldBy !== DRIVER_ID && (s.status === 'AVAILABLE' || s.status === 'OCCUPIED'))
   const spot = candidates[Math.floor(random() * candidates.length)]
+  if (!spot) return
   if (spot.status === 'AVAILABLE') setStatus(spot, random() < 0.3 ? 'RESERVED' : 'OCCUPIED', 'someone-else')
   else setStatus(spot, 'AVAILABLE')
 }, 4000)
@@ -223,10 +224,53 @@ export const mockApi: Api = {
       return location
     }),
 
+  updateLocation: (id, input) =>
+    delay(() => {
+      const location = findLocation(id)
+      Object.assign(location, input)
+      return counted(location)
+    }),
+
+  deleteLocation: (id) =>
+    delay(() => {
+      const location = findLocation(id)
+      const inUse = spots
+        .filter((s) => s.locationId === id && (s.status === 'RESERVED' || s.status === 'OCCUPIED'))
+        .map((s) => s.code)
+        .sort((a, c) => a.localeCompare(c, undefined, { numeric: true }))
+      if (inUse.length > 0) {
+        throw new ApiError(
+          409,
+          `${location.name} can't be deleted while drivers use ${inUse.join(', ')}. Wait until those spots are free; reserved ones you can close first.`,
+        )
+      }
+      locations.splice(locations.indexOf(location), 1)
+      for (let i = spots.length - 1; i >= 0; i--) if (spots[i].locationId === id) spots.splice(i, 1)
+    }),
+
+  deleteSpot: (locationId, spotId) =>
+    delay(() => {
+      const spot = findSpot(spotId)
+      if (spot.locationId !== locationId) throw new ApiError(404, 'This spot no longer exists.')
+      if (spot.status === 'RESERVED' || spot.status === 'OCCUPIED') {
+        throw new ApiError(
+          409,
+          `Spot ${spot.code} is ${spot.status.toLowerCase()}. Wait until it is free, or close it first if it is only reserved.`,
+        )
+      }
+      spots.splice(spots.indexOf(spot), 1)
+    }),
+
   addSpots: (locationId, input) =>
     delay(() => {
       findLocation(locationId)
-      const existing = spots.filter((s) => s.locationId === locationId && s.level === input.level && s.zone === input.zone).length
+      // Continue after the highest number in the zone, like parking-service (after deleting A2 of A1–A3, next is A4).
+      const existing = Math.max(
+        0,
+        ...spots
+          .filter((s) => s.locationId === locationId && s.level === input.level && s.zone === input.zone)
+          .map((s) => Number(s.code.slice(s.zone.length))),
+      )
       const added: Spot[] = Array.from({ length: input.count }, (_, i) => ({
         id: crypto.randomUUID(),
         locationId,

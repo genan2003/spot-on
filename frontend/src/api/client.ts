@@ -50,6 +50,11 @@ export interface Api {
   getLocation(id: string): Promise<ParkingLocation>
   listSpots(locationId: string): Promise<Spot[]>
   createLocation(location: NewLocation): Promise<ParkingLocation>
+  updateLocation(id: string, location: NewLocation): Promise<ParkingLocation>
+  /** Fails with 409 while drivers use any of its spots; the message names them. */
+  deleteLocation(id: string): Promise<void>
+  /** Only a free or closed spot can be deleted. */
+  deleteSpot(locationId: string, spotId: string): Promise<void>
   addSpots(locationId: string, spots: NewSpots): Promise<Spot[]>
   setSpotStatus(locationId: string, spotId: string, status: SpotStatus): Promise<Spot>
   /** Changes the properties of one or more spots of a location. */
@@ -73,6 +78,9 @@ const httpApi: Api = {
   getLocation: (id) => request(`/parking-locations/${id}`),
   listSpots: (locationId) => request(`/parking-locations/${locationId}/spots`),
   createLocation: (location) => request('/parking-locations', json('POST', location)),
+  updateLocation: (id, location) => request(`/parking-locations/${id}`, json('PUT', location)),
+  deleteLocation: (id) => request(`/parking-locations/${id}`, json('DELETE')),
+  deleteSpot: (locationId, spotId) => request(`/parking-locations/${locationId}/spots/${spotId}`, json('DELETE')),
   addSpots: (locationId, spots) => request(`/parking-locations/${locationId}/spots`, json('POST', spots)),
   setSpotStatus: (locationId, spotId, status) =>
     request(`/parking-locations/${locationId}/spots/${spotId}`, json('PATCH', { status })),

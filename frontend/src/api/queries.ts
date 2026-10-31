@@ -98,6 +98,9 @@ export const useEndSession = () => useParkingMutation((id: string) => api.endSes
 export const useRetryPayment = () => useParkingMutation((paymentId: string) => api.retryPayment(paymentId))
 
 export const useCreateLocation = () => useParkingMutation((location: NewLocation) => api.createLocation(location))
+export const useUpdateLocation = (id: string) => useParkingMutation((location: NewLocation) => api.updateLocation(id, location))
+export const useDeleteLocation = () => useParkingMutation((id: string) => api.deleteLocation(id))
+export const useDeleteSpot = (locationId: string) => useParkingMutation((spotId: string) => api.deleteSpot(locationId, spotId))
 export const useAddSpots = (locationId: string) => useParkingMutation((spots: NewSpots) => api.addSpots(locationId, spots))
 export const useSetSpotStatus = (locationId: string) =>
   useParkingMutation(({ spotId, status }: { spotId: string; status: SpotStatus }) => api.setSpotStatus(locationId, spotId, status))

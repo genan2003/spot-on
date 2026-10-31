@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,6 +47,13 @@ public class SpotController {
 			@Valid @RequestBody SpotStatusRequest request) {
 		return mapper.toResponse(spotService.update(locationId, spotId, request.status(), request.type(), request.evCharging(),
 				request.accessible()));
+	}
+
+	/** Removes a free or closed spot; a reserved or occupied one is a 409. */
+	@DeleteMapping("/{spotId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void delete(@PathVariable UUID locationId, @PathVariable UUID spotId) {
+		spotService.delete(locationId, spotId);
 	}
 
 	/** Admin edit of several spots at once, e.g. "these four now have EV charging". */

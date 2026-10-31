@@ -229,6 +229,35 @@ class ParkingApiIntegrationTests {
 	}
 
 	@Test
+	void adminDeletesSpotsAndNumberingContinues() throws Exception {
+		String locationId = createLocation("Deleting spots");
+		addSpots(locationId, "D", 3);
+		String body = mvc.perform(get("/api/v1/parking-locations/{id}/spots", locationId)).andReturn().getResponse().getContentAsString();
+		String d2 = JsonPath.read(body, "$[1].id");
+		String d3 = JsonPath.read(body, "$[2].id");
+
+		mvc.perform(delete("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, d2)).andExpect(status().isNoContent());
+		mvc.perform(delete("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, d2)).andExpect(status().isNotFound());
+
+		// D1 and D3 are left; the next spot is D4, not a second D3.
+		send(post("/api/v1/parking-locations/{id}/spots", locationId), """
+				{"level":0,"zone":"D","count":1,"type":"STANDARD","evCharging":false,"accessible":false}""")
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$[0].code").value("D4"));
+
+		// A spot a driver is using can't be deleted.
+		hold(d3, "reserve", "driver-9", UUID.randomUUID().toString()).andExpect(status().isOk());
+		mvc.perform(delete("/api/v1/parking-locations/{id}/spots/{spotId}", locationId, d3))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value("Spot D3 is reserved. Wait until it is free, or close it first if it is only reserved."));
+		// Nor can the car park, and the answer says which spots are in use.
+		mvc.perform(delete("/api/v1/parking-locations/{id}", locationId))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.detail").value(
+					"Deleting spots can't be deleted while drivers use D3. Wait until those spots are free; reserved ones you can close first."));
+	}
+
+	@Test
 	void adminClosesAndReopensASpot() throws Exception {
 		String locationId = createLocation("Closing test");
 		String spotId = addSpots(locationId, "B", 2);

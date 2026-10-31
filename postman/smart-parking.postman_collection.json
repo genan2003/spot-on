@@ -566,6 +566,25 @@
           }
         },
         {
+          "name": "Deleting the car park while a spot is reserved is a conflict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Names the spot in use', () => pm.expect(pm.response.json().detail).to.include('A1'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}"
+          }
+        },
+        {
           "name": "Get reservation",
           "event": [
             {
@@ -1416,6 +1435,53 @@
     {
       "name": "Cleanup",
       "item": [
+        {
+          "name": "Delete a free spot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots/{{spot2Id}}"
+          }
+        },
+        {
+          "name": "Adding a spot after a delete continues the numbering",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('A2 was deleted, A1 and A3 are left: the new spot is A4', () => pm.expect(pm.response.json()[0].code).to.eql('A4'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/parking-locations/{{locationId}}/spots",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"level\": 0,\n  \"zone\": \"A\",\n  \"count\": 1,\n  \"type\": \"STANDARD\",\n  \"evCharging\": false,\n  \"accessible\": false\n}"
+            }
+          }
+        },
         {
           "name": "Delete location",
           "event": [

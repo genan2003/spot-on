@@ -13,6 +13,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
+import java.util.Comparator;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -70,6 +71,11 @@ public class ParkingSpot {
 	@Version
 	private long version;
 
+	/** Level, zone, then number (A2 before A10), the order spot lists use everywhere. */
+	public static final Comparator<ParkingSpot> ORDER = Comparator.comparingInt(ParkingSpot::getLevel)
+		.thenComparing(ParkingSpot::getZone)
+		.thenComparingInt(ParkingSpot::getNumber);
+
 	public ParkingSpot(ParkingLocation location, String code, int level, String zone, SpotType type,
 			boolean evCharging, boolean accessible) {
 		this.location = location;
@@ -95,6 +101,11 @@ public class ParkingSpot {
 		if (newAccessible != null) {
 			accessible = newAccessible;
 		}
+	}
+
+	/** The number in the spot's code: 12 for A12. */
+	public int getNumber() {
+		return Integer.parseInt(code.substring(zone.length()));
 	}
 
 	public void reserve(String driverId, UUID reservationId) {

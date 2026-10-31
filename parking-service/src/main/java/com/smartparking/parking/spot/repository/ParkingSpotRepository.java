@@ -25,9 +25,9 @@ public interface ParkingSpotRepository extends JpaRepository<ParkingSpot, UUID> 
 
 	Optional<ParkingSpot> findByIdAndLocationId(UUID id, UUID locationId);
 
-	long countByLocationIdAndLevelAndZone(UUID locationId, int level, String zone);
+	List<ParkingSpot> findByLocationIdAndLevelAndZone(UUID locationId, int level, String zone);
 
-	boolean existsByLocationIdAndStatusIn(UUID locationId, Collection<SpotStatus> statuses);
+	List<ParkingSpot> findByLocationIdAndStatusIn(UUID locationId, Collection<SpotStatus> statuses);
 
 	@Query("select new com.smartparking.parking.spot.repository.SpotCount(s.location.id, s.status, count(s)) "
 			+ "from ParkingSpot s group by s.location.id, s.status")

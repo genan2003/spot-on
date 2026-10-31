@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
-import { useAddSpots, useLocation, useSetSpotStatus, useSpots } from '../api/queries'
+import { useAddSpots, useDeleteSpot, useLocation, useSetSpotStatus, useSpots } from '../api/queries'
 import type { Spot, SpotStatus, SpotType } from '../api/types'
 import { LevelPicker } from '../components/LevelPicker'
 import { Legend } from '../components/Legend'
@@ -31,10 +31,13 @@ export function AdminLocationPage() {
               <h1 className="text-2xl font-extrabold tracking-tight">{loc.name}</h1>
               <p className="text-ink-muted">{loc.address}</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span>{describePricing(loc.pricing)}</span>
               <Link to={`/admin/locations/${id}/pricing`} className={button.small}>
                 Edit pricing
+              </Link>
+              <Link to={`/admin/locations/${id}/edit`} className={button.small}>
+                Edit details
               </Link>
             </div>
           </header>
@@ -198,6 +201,7 @@ function SpotPanel({ spot, onClose }: { spot: Spot; onClose: () => void }) {
           </p>
         )}
       </div>
+      <DeleteSpot spot={spot} onDeleted={onClose} />
     </section>
   )
 }
@@ -373,5 +377,46 @@ function SeveralSpotsPanel({ locationId, spots, onClear }: { locationId: string;
       <p className="text-sm text-ink-muted">{spots.map((s) => s.code).join(', ')}</p>
       <SpotPropertiesForm locationId={locationId} spots={spots} />
     </section>
+  )
+}
+
+/** Removes a free or closed spot for good, after a confirm step. */
+function DeleteSpot({ spot, onDeleted }: { spot: Spot; onDeleted: () => void }) {
+  const remove = useDeleteSpot(spot.locationId)
+  const [confirming, setConfirming] = useState(false)
+  if (spot.status === 'RESERVED' || spot.status === 'OCCUPIED') return null
+
+  return (
+    <div className="mt-4 border-t border-hairline pt-4">
+      {!confirming ? (
+        <button type="button" className={button.quiet} onClick={() => setConfirming(true)}>
+          Delete spot
+        </button>
+      ) : (
+        <div role="group" aria-labelledby="delete-spot-warning" className="border-l-4 border-reserved pl-3">
+          <p id="delete-spot-warning" className="text-sm">
+            Delete {spot.code} for good? New spots in zone {spot.zone} continue after the highest number.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className={button.secondary}
+              disabled={remove.isPending}
+              onClick={() => remove.mutate(spot.id, { onSuccess: onDeleted })}
+            >
+              {remove.isPending ? 'Deleting spot…' : `Delete ${spot.code}`}
+            </button>
+            <button type="button" className={button.quiet} onClick={() => setConfirming(false)}>
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
+      {remove.error && (
+        <p role="alert" className="mt-3 border-l-4 border-occupied pl-3 text-sm font-semibold">
+          {remove.error.message}
+        </p>
+      )}
+    </div>
   )
 }
